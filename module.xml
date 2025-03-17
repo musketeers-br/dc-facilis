@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Export generator="Cache" version="25">
-  <Document name="dc-sample.ZPM">
+  <Document name="dc-facilis.ZPM">
     <Module>
-      <Name>dc-sample</Name>
-      <Version>2.0.6</Version>
-      <Description>Basic InterSystems IRIS Development Template</Description>
+      <Name>dc-facilis</Name>
+      <Version>0.0.1</Version>
+      <Description>Facilis – Effortless API Interoperability with AI</Description>
       <Packaging>module</Packaging>
       <SourcesRoot>src</SourcesRoot>
-      <Resource Name="dc.sample.PKG"/>
-      <UnitTest Name="/tests" Package="dc.sample.unittests" Phase="test"/>
-
+      <Resource Name="dc.facilis.PKG"/>
     </Module>
   </Document>
 </Export>
