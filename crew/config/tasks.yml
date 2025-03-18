@@ -1,0 +1,81 @@
+extraction_task:
+  description: Use NLP and pattern recognition to extract API specifications (host, endpoint, port, HTTP method, JSON model).
+  agent: ExtractionAgent
+  dependencies: []
+  actions:
+    - step: Parse input
+      action: Apply NLP to identify API details.
+    - step: Validate extracted data
+      action: Ensure extracted values are formatted correctly.
+    - step: Check for missing details
+      action: If missing details are found, trigger InteractionAgent.
+    - step: Send extracted data
+      action: Forward structured API details to ValidationAgent.
+
+interaction_tasks:
+  description: Identify missing fields and ask the user for input.
+  agent: InteractionAgent
+  dependencies: [extraction_tasks]
+  actions:
+    - step: Identify missing fields
+      action: Check which details are missing from extracted data.
+    - step: Generate user prompt
+      action: Ask user for missing API details in a structured way.
+    - step: Validate user responses
+      action: Ensure provided details are correctly formatted.
+    - step: Send completed data
+      action: Return validated details to ExtractionAgent.
+
+validation_tasks:
+  description: Ensure the extracted API information is correct and meets required formats.
+  agent: ValidationAgent
+  dependencies: [extraction_tasks, interaction_tasks]
+  actions:
+    - step: Verify fields
+      action: Validate host, endpoint, port, method, and JSON model.
+    - step: Check logical consistency
+      action: Ensure the API structure makes sense.
+    - step: Report errors
+      action: Flag invalid entries and request corrections.
+    - step: Send validated data
+      action: Forward structured API details to TransformationAgent.
+
+transformation_tasks:
+  description: Transform the structured API data into OpenAPI 3.0 format.
+  agent: TransformationAgent
+  dependencies: [validation_tasks]
+  actions:
+    - step: Map API details
+      action: Convert extracted details into OpenAPI structure.
+    - step: Ensure OpenAPI compliance
+      action: Validate against OpenAPI 3.0 standards.
+    - step: Generate OpenAPI JSON
+      action: Format and save the API documentation.
+    - step: Send OpenAPI JSON
+      action: Forward the output to ReviewerAgent.
+
+reviewer_tasks:
+  description: Ensure the OpenAPI document follows the specification and is error-free.
+  agent: ReviewerAgent
+  dependencies: [transformation_tasks]
+  actions:
+    - step: Validate OpenAPI schema
+      action: Check structure, data types, and completeness.
+    - step: Identify issues
+      action: Report errors if found.
+    - step: Approve or request fixes
+      action: If errors exist, send corrections to TransformationAgent.
+    - step: Forward final OpenAPI JSON
+      action: Send the validated document to IRISExporterAgent.
+
+iris_exporter_tasks:
+  description: Transform and export OpenAPI documentation to IRIS Interoperability.
+  agent: IRISExporterAgent
+  dependencies: [reviewer_tasks]
+  actions:
+    - step: Convert OpenAPI JSON
+      action: Map OpenAPI structure to InterSystems IRIS format.
+    - step: Validate IRIS conversion
+      action: Ensure compatibility with IRIS Interoperability.
+    - step: Export to IRIS
+      action: Send the converted file to the IRIS system.
