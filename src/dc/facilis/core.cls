@@ -1,15 +1,19 @@
 Class dc.facilis.core Extends %RegisteredObject
 {
 
-    /// Crew excution start
-    ClassMethod Execute() As %Status
-    {
+/// Crew excution start
+/// Como interagir com o interaction_agent?
+/// Como transformar de OpenAPI para I14y?
+ClassMethod Execute() As %Status
+{
         Set sc = $$$OK
+        Do ##class(dc.facilis.core).Agents("I want to get all pull requests from octocat/Hello-World on github. The host is api.github.com and endpoint '/repos/{owner}/{repo}/pulls' Use method GET")
+        ;Write ##class(dc.facilis.core).Agents("I want to find all open orders from lambdadela.org/delta/findByStatus using get method and 'state' query param. No auth, no port is needed")
         Return sc
-    }
+}
 
-    /// Agent
-ClassMethod Agents(prompt as %String) As %String [ Language = python]
+/// Agent
+ClassMethod Agents(prompt As %String) As %String [ Language = python ]
 {
     import os
     from langchain.chat_models import ChatOpenAI
@@ -18,12 +22,9 @@ ClassMethod Agents(prompt as %String) As %String [ Language = python]
     import re
     import json
 
-    # Carregar variáveis de ambiente
     load_dotenv()
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-    # Inicializar o modelo OpenAI GPT-4o-mini
-    llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, openai_api_key=OPENAI_API_KEY)
+    llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, openai_api_key=OPENAI_API_KEY, verbose = True )
 
     def interaction_agent(missing_fields):
         """
@@ -60,13 +61,16 @@ ClassMethod Agents(prompt as %String) As %String [ Language = python]
         if port and (not str(port).isdigit() or int(port) < 1 or int(port) > 65535):
             errors.append("Invalid port number.")
         
-        # Validate JSON model (if provided)
+        # Validate JSON model for certain methods
         json_model = extracted_data.get("json_model")
-        if json_model:
-            try:
-                json.loads(json_model)
-            except json.JSONDecodeError:
-                errors.append("Invalid JSON model.")
+        if extracted_data.get("HTTP_Method", "").upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            if not json_model:
+                errors.append("Missing JSON model for method that requires a request body.")
+            else:
+                try:
+                    json.loads(json_model)
+                except json.JSONDecodeError:
+                    errors.append("Invalid JSON model.")
         
         if errors:
             return {"error": "Validation failed", "issues": errors}
@@ -126,19 +130,37 @@ ClassMethod Agents(prompt as %String) As %String [ Language = python]
         except json.JSONDecodeError:
             return {"error": "Invalid OpenAPI JSON format"}
 
+    def iris_export_agent(openapi_json):
+        """
+        Converts and exports OpenAPI documentation to InterSystems IRIS Interoperability format.
+        """
+        import iris
+        try:
+            response = {}
+            if "error" in response:
+                return {"error": "Failed to export to InterSystems IRIS", "details": response}
+            return {"status": "Successfully exported to InterSystems IRIS"}
+        except Exception as e:
+            return {"error": "Unexpected error during IRIS export", "details": str(e)}
+
     def extract_api_spec(description: str):
         """
         Extracts API specifications from a natural language description.
         """
+
         prompt = (
             "You are an assistant specialized in identifying API specifications from natural language descriptions. "
             "Given the following user input, extract the necessary information and return a structured JSON with the fields: "
-            "host, endpoint, HTTP_Method, params (optional parameters), and authentication (if applicable). "
-            "If any essential field is missing, return 'missing'.\n\n"
+            "host (required), endpoint (required), HTTP_Method (required), params (optional parameters), "
+            "port (if available), json_model (if applicable for POST, PUT, PATCH, DELETE), and authentication (if applicable). "
+            "If any essential field (host, endpoint, or HTTP method) is missing, return 'missing'. "
+            "If the HTTP method is POST, PUT, PATCH, or DELETE, ensure a JSON model is provided. "
+            "If missing, mark it as 'missing' so the interaction agent can request it from the user.\n\n"
             f"Input: {description}\n"
             "Expected output in JSON:"
         )
         
+        print(description)
         response = llm([SystemMessage(content=prompt)])
         # rest of the code follows
 
@@ -162,19 +184,15 @@ ClassMethod Agents(prompt as %String) As %String [ Language = python]
             if "error" in review_result:
                 return review_result
 
+            print(openapi_json)
+
             return openapi_json
 
+            #return iris_export_agent(openapi_json)
         except json.JSONDecodeError:
             return {"error": "Failed to parse response"}
 
-    # Exemplo de uso
-    description = "I want to get all pull requests from octocat/Hello-World on github. The host is api.github.com and endpoint '/repos/{owner}/{repo}/pulls' Use get method and include optional parameters like 'state', 'sort', and 'direction'"
-    result = extract_api_spec(description)
-    print(result)
-
-
-    description = "I want to get all information of sqlzilla repository "
-    #result = extract_api_spec(description)
-    #print(result)    
+    return extract_api_spec(prompt)
 }
+
 }
