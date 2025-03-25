@@ -1,0 +1,124 @@
+user@machine:~$ docker run -d --name iris-comm -p 1972:1972 -p 52773:52773 -e IRIS_PASSWORD=demo -e IRIS_USERNAME=demo intersystemsdc/iris-community:latest
+7830cc6bfb3c21916ffee6cd7f7d71f1bcaa007b19ff226486c711a244fc9924
+user@machine:~$ docker ps
+CONTAINER ID   IMAGE                                  COMMAND                  CREATED         STATUS                            PORTS                                                                                                                       NAMES
+7830cc6bfb3c   intersystemsdc/iris-community:latest   "/tini -- /docker-en…"   9 seconds ago   Up 5 seconds (health: starting)   0.0.0.0:1972->1972/tcp, 2188/tcp, 53773/tcp, 0.0.0.0:52773->52773/tcp, 54773/tcp                                            iris-comm
+user@machine:~$ docker logs iris-comm -f
+~ /opt/irisapp
+/opt/irisapp
+[INFO] Starting InterSystems IRIS instance IRIS...
+[INFO] Starting Control Process
+Global buffer setting requires attention.  Auto-selected 25% of total memory.
+Allocated 2228MB shared memory
+1562MB global buffers, 156MB routine buffers
+This copy of InterSystems IRIS has been licensed for use exclusively by:
+InterSystems IRIS Community
+Copyright (c) 1986-2024 by InterSystems Corporation
+Any other use is a violation of your license agreement
+
+1 alert(s) during startup. See messages.log for details.
+Starting IRIS
+
+03/08/25-00:03:44:325 (389) 0 [Generic.Event] Global buffer setting requires attention.  Auto-selected 25% of total memory.
+03/08/25-00:03:49:634 (389) 0 [Generic.Event] Allocated 2228MB shared memory
+03/08/25-00:03:49:634 (389) 0 [Generic.Event] 1562MB global buffers, 156MB routine buffers, 64MB journal buffers, 125MB buffer descriptors, 300MB heap, 5MB ECP, 16MB miscellaneous
+03/08/25-00:03:49:647 (389) 0 [Crypto.IntelSandyBridgeAESNI] Intel Sandy Bridge AES-NI instructions detected.
+03/08/25-00:03:49:658 (389) 0 [SIMD] SIMD optimization level: AVX2
+03/08/25-00:03:50:897 (389) 0 [WriteDaemon.UsingWIJFile] Using WIJ file: /usr/irissys/mgr/IRIS.WIJ
+03/08/25-00:03:50:897 (389) 0 [Generic.Event] No journaling info from prior system
+03/08/25-00:03:50:897 (389) 0 [WriteDaemon.CreatingNewWIJ] Creating a new WIJ file
+03/08/25-00:03:58:134 (389) 0 [WriteDaemon.CreatedNewWIJ] New WIJ file created
+03/08/25-00:03:58:161 (389) 0 [Generic.Event]
+Startup of InterSystems IRIS [IRIS for UNIX (Ubuntu Server LTS for x86-64 Containers) 2024.1.1 (Build 347U) Thu Jul 18 2024 17:11:38 EDT]
+        in /usr/irissys/bin/
+        with mgr: /usr/irissys/mgr
+        with wij: /usr/irissys/mgr/IRIS.WIJ
+        from: /usr/irissys/mgr/
+  OS=[Linux], version=[#1 SMP Wed Oct 28 23:40:43 UTC 2020], release=[5.4.72-microsoft-standard-WSL2], machine=[x86_64]
+  nodename=[7830cc6bfb3c].
+  numasyncwijbuf: 2, wdwrite_asyncio_max: 64, wijdirectio: on, synctype: 3
+  System Initialized.
+03/08/25-00:03:58:227 (430) 0 [WriteDaemon.Started] Write daemon started.
+03/08/25-00:04:05:962 (441) 0 [Database.MountedRW] Mounted database /usr/irissys/mgr/ (SFN 0) read-write.
+03/08/25-00:04:06:136 (441) 0 [Utility.Event] Instance 'IRIS' starting on node 7830cc6bfb3c by user irisowner on 03/08/2025 00:04:06.136 UTC
+03/08/25-00:04:06:137 (441) 0 [Utility.Event] Using parameters from file '/usr/irissys/iris.cpf'
+03/08/25-00:04:06:140 (441) 0 [Utility.Event] Loading DLLs
+03/08/25-00:04:34:718 (441) 0 [Database.MountedRO] Mounted database /usr/irissys/mgr/irislib/ (SFN 1) read-only. Database label is marked read-only.
+
+03/08/25-00:04:34:731 (441) 0 [Utility.Event] Switching to temporary %SYS Namespace
+03/08/25-00:04:34:739 (441) 0 [Utility.Event] Loading Locale enuw (English, United States, Unicode) from objects
+03/08/25-00:04:35:196 (441) 0 [Database.MountedRW] Mounted database /usr/irissys/mgr/irislocaldata/ (SFN 2) read-write.
+03/08/25-00:04:35:202 (441) 0 [Utility.Event] Using OpenSSL 3.0.2 15 Mar 2022
+03/08/25-00:04:35:574 (441) 0 [Database.MountedRW] Mounted database /usr/irissys/mgr/iristemp/ (SFN 3) read-write.
+03/08/25-00:04:35:610 (441) 0 [Utility.Event] /usr/irissys/mgr/iristemp/ initialized as IRISTEMP
+03/08/25-00:04:35:614 (441) 0 [Utility.Event] Switching to default %SYS Namespace
+03/08/25-00:04:35:634 (441) 0 [Utility.Event] Added ethernet device sit0 to default list
+03/08/25-00:04:35:742 (442) 0 [Utility.Event] Log Monitor Started
+03/08/25-00:04:35:863 (443) 0 [Utility.Event] Clean Daemon Started
+03/08/25-00:04:35:962 (441) 1 [Utility.Event] Configuration file /usr/irissys/iris.cpf is not the same as when last shut down
+03/08/25-00:04:36:277 (441) 0 [Utility.Event] Updating configuration information from /usr/irissys/iris.cpf
+03/08/25-00:04:36:302 (441) 0 [Utility.Event] No archives configured
+03/08/25-00:04:36:305 (441) 0 [Utility.Event] Performing Journal Recovery
+03/08/25-00:04:36:306 (441) 0 [Utility.Event] Graceful system shutdown, journal restore not required
+03/08/25-00:04:36:306 (441) 0 [Utility.Event] Graceful system shutdown, transaction rollback not required
+03/08/25-00:04:36:320 (441) 0 [Utility.Event] START: /usr/irissys/mgr/journal/20250308.001
+03/08/25-00:04:36:378 (441) 0 [Generic.Event] INTERSYSTEMS IRIS JOURNALING SYSTEM MESSAGE
+Journaling started to: /usr/irissys/mgr/journal/20250308.001
+03/08/25-00:04:36:378 (441) 0 [Utility.Event] Journaling to /usr/irissys/mgr/journal/20250308.001 started.
+03/08/25-00:04:36:379 (441) 0 [Utility.Event] Processing WorkQueues section
+03/08/25-00:04:36:379 (441) 0 [Utility.Event] Processing Startup section
+03/08/25-00:04:36:406 (444) 0 [Utility.Event] Purging old application errors
+03/08/25-00:04:36:406 (441) 0 [Utility.Event] Processing config section
+03/08/25-00:04:36:457 (441) 0 [Utility.Event] Initializing Security system
+03/08/25-00:04:36:457 (445) 0 [Utility.Event] LMF Info:  Licensed for 8 users.
+03/08/25-00:04:36:485 (441) 0 [Utility.Event] Processing Network section
+03/08/25-00:04:36:489 (441) 0 [Utility.Event] Activating Network
+03/08/25-00:04:36:517 (441) 0 [Utility.Event] Processing Databases section
+03/08/25-00:04:36:831 (441) 0 [Database.MountedRW] Mounted database /usr/irissys/mgr/irisaudit/ (SFN 4) read-write.
+03/08/25-00:04:36:841 (441) 0 [Utility.Event] Processing Namespaces section
+03/08/25-00:04:36:841 (441) 0 [Utility.Event] Loading all namespaces
+03/08/25-00:04:38:756 (441) 0 [Database.MountedRW] Mounted database /usr/irissys/mgr/zpm/ (SFN 5) read-write.
+03/08/25-00:04:48:569 (441) 0 [Database.MountedRO] Mounted database /usr/irissys/mgr/enslib/ (SFN 6) read-only. Database label is marked read-only.
+03/08/25-00:04:48:628 (441) 0 [Utility.Event] Activating namespaces
+03/08/25-00:04:48:629 (441) 0 [Utility.Event] Activating new namespace map
+03/08/25-00:04:48:655 (441) 0 [Utility.Event] Namespace changes have been activated
+03/08/25-00:04:48:655 (441) 0 [Utility.Event] Rebuilding Extent index for all namespaces
+03/08/25-00:04:48:657 (441) 0 [Utility.Event] Rebuilding Extent index for namespace %SYS
+03/08/25-00:04:51:738 (441) 0 [Utility.Event] Rebuilding Extent index for namespace USER
+03/08/25-00:04:52:142 (441) 0 [Database.MountedRW] Mounted database /usr/irissys/mgr/user/ (SFN 7) read-write.
+03/08/25-00:04:53:561 (441) 0 [Utility.Event] Rebuild of Extent index completed
+03/08/25-00:04:53:570 (465) 0 [Utility.Event] Starting superserver on port 1972
+03/08/25-00:04:53:570 (441) 0 [Utility.Event] Network Lock Upload Phase Starting
+03/08/25-00:04:53:570 (441) 0 [Utility.Event] Lock Upload Phase Complete
+03/08/25-00:04:53:570 (441) 0 [Utility.Event] Processing Miscellaneous section
+03/08/25-00:04:53:633 (468) 0 [Utility.Event] Starting Servers
+03/08/25-00:04:53:650 (441) 0 [Utility.Event] Processing Devices section
+03/08/25-00:04:53:652 (441) 0 [Utility.Event] Processing DeviceSubTypes section
+03/08/25-00:04:53:652 (441) 0 [Utility.Event] Processing MagTape section
+03/08/25-00:04:53:666 (441) 0 [Utility.Event] Processing IO section
+03/08/25-00:04:53:666 (441) 0 [Utility.Event] Processing SQL section
+03/08/25-00:04:53:671 (441) 0 [Utility.Event] Processing Macro Pre-Processor (MPP) section
+03/08/25-00:04:53:677 (441) 0 [Utility.Event] Processing OS Package Requirements section
+03/08/25-00:04:53:904 (468) 0 [Utility.Event] Private webserver started on 52773
+03/08/25-00:04:53:904 (468) 0 [Utility.Event] Processing Shadows section (this system as shadow)
+03/08/25-00:04:53:906 (468) 0 [Utility.Event] Processing Monitor section
+03/08/25-00:04:53:976 (619) 0 [Utility.Event] Starting TASKMGR
+03/08/25-00:04:53:997 (620) 0 [Utility.Event] [SYSTEM MONITOR] System Monitor started in %SYS
+03/08/25-00:04:54:069 (622) 0 [Utility.Event] WorkQueue: Starting work queue daemon parent=468
+03/08/25-00:04:54:069 (468) 0 [Utility.Event] Shard license: 0
+03/08/25-00:04:54:320 (432) 0 [Generic.Event] Journal log has been changed from edition 1 to 2
+03/08/25-00:04:54:366 (468) 0 [Generic.Event] INTERSYSTEMS IRIS JOURNALING SYSTEM MESSAGE
+Journaling switched to: /usr/irissys/mgr/journal/20250308.002
+03/08/25-00:04:54:591 (441) 0 [Generic.Event] Auditing to /usr/irissys/mgr/irisaudit/
+03/08/25-00:04:54:800 (441) 0 [Utility.Event] Executing ^ZSTU routine
+03/08/25-00:04:54:801 (441) 0 [Utility.Event] Executing ^%ZSTART routine
+03/08/25-00:04:54:801 (441) 0 [Utility.Event] Enabling logons
+03/08/25-00:04:54:806 (441) 0 [Utility.Event] Initializing Interoperability during system startup
+[INFO] ...started InterSystems IRIS instance IRIS
+[INFO] Executing command /docker-entrypoint.sh iris-after-start ...
+[INFO]
+/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+
+[INFO] ...executed command /docker-entrypoint.sh iris-after-start
+03/08/25-00:04:58:985 (636) 0 [Utility.Event] Journal File Compression: Compressed /usr/irissys/mgr/journal/20250308.001 from 327680 bytes to 98304 bytes, compression ratio = 3.3
+^Cuser@machine:~$ cd ~/dev/tmp/

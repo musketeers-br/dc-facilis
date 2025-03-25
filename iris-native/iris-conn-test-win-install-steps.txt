@@ -1,0 +1,21 @@
+PS C:\dev\treehacks\hackathon-2024> python -m venv iris-env
+PS C:\dev\treehacks\hackathon-2024> .\iris-env\Scripts\Activate
+(iris-env) PS C:\dev\treehacks\hackathon-2024> pip install ./install/intersystems_irispython-5.0.1-8026-cp38.cp39.cp310.cp311.cp312-cp38.cp39.cp310.cp311.cp312-win_amd64.whl
+Processing c:\dev\treehacks\hackathon-2024\install\intersystems_irispython-5.0.1-8026-cp38.cp39.cp310.cp311.cp312-cp38.cp39.cp310.cp311.cp312-win_amd64.whl
+Installing collected packages: intersystems-irispython
+Successfully installed intersystems-irispython-5.0.1
+
+[notice] A new release of pip is available: 23.2.1 -> 25.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+(iris-env) PS C:\dev\treehacks\hackathon-2024> python3
+(iris-env) PS C:\dev\treehacks\hackathon-2024> python
+Python 3.11.5 (tags/v3.11.5:cce6ba9, Aug 24 2023, 14:38:34) [MSC v.1936 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import iris
+>>> quit()
+(iris-env) PS C:\dev\treehacks\hackathon-2024> python .\iris-conn-test.py
+localhost:1972/USER
+connected!
+(datetime.datetime(2025, 3, 8, 0, 23, 21), 'Hello!')
+connection closed
+(iris-env) PS C:\dev\treehacks\hackathon-2024>
