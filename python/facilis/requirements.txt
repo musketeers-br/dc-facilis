@@ -1,0 +1,9 @@
+streamlit
+requests
+openai
+langchain
+langchain-openai
+langchain-iris
+langchain-community
+SQLAlchemy
+python-dotenv

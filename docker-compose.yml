@@ -18,7 +18,19 @@ services:
       - OPENAI_API_KEY=$OPENAI_API_KEY
     networks:
       - default
-   
+    
+  streamlit:
+    container_name: dc-facilis-frontend-1
+    build:
+      context: .
+      dockerfile: Dockerfile-streamlit
+    ports:
+      - 8501:8501
+    volumes:
+      - ./python/facilis/:/app/
+    networks:
+      - default
+
 networks:
   default:
     driver: bridge
