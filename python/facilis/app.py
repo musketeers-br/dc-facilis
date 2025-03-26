@@ -7,12 +7,6 @@ st.set_page_config(page_title="API Extractor", layout="wide")
 # App title
 st.title("Facilis")
 
-# Sidebar for configuration
-with st.sidebar:
-    st.header("Settings")
-    openai_key = st.text_input("OpenAI API Key", type="password")
-
-# Initialize session state for messages
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
