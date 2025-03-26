@@ -1,5 +1,6 @@
 services:
   iris:
+    container_name: dc-facilis-iris-1
     build:
       context: .
       dockerfile: Dockerfile
@@ -17,24 +18,7 @@ services:
       - OPENAI_API_KEY=$OPENAI_API_KEY
     networks:
       - default
-
-  jupyter:
-    # image: quay.io/jupyter/base-notebook
-    image: quay.io/jupyter/base-notebook:python-3.11.10
-    user: root
-    ports:
-      - 29999:8888
-    volumes:
-      - ./jupyter:/home/jovyan/work
-    environment:
-      - NB_UID=${UID:-1000}
-      - NB_GID=${GID:-1000}
-      - JUPYTER_ENABLE_LAB=yes
-      - OPENAI_API_KEY=$OPENAI_API_KEY
-    command: start-notebook.sh --NotebookApp.token=''
-    networks:
-      - default
-
+   
 networks:
   default:
     driver: bridge
