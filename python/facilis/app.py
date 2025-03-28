@@ -1,89 +1,90 @@
 import streamlit as st
+import yaml
 import json
-import os
-from facilis import extract_api_specs, production_agent
+from facilis import IrisI14yService, ProductionData, process_api_integration
 
-# ✅ Ensure set_page_config is the first Streamlit command
-st.set_page_config(page_title="Facilis API Extractor", layout="wide")
+st.title("Facilis API Integration Manager")
 
-# ✅ Initialize session state correctly
-if 'messages' not in st.session_state:
-    st.session_state['messages'] = []
-if 'production_info' not in st.session_state:
-    try:
-        response = production_agent()
-        if isinstance(response, str):  # Ensure it's a JSON string before loading
-            st.session_state['production_info'] = json.loads(response)
-        elif isinstance(response, dict):  # Already a dictionary
-            st.session_state['production_info'] = response
-        else:
-            raise ValueError("Invalid response format")
-    except (json.JSONDecodeError, ValueError):
-        st.error("⚠️ Failed to parse production info. Please try again.")
-        st.session_state['production_info'] = {}
-
-# 🏷️ **App Title & Instructions**
-st.title("Facilis API Extractor")
-st.write("Send API descriptions to extract structured API specifications.")
-
-# 🏷️ **Show Production Info (if available)**
-if st.session_state['production_info']:
-    st.write("**Production Name:**", st.session_state['production_info'].get('production_name', 'N/A'))
-    st.write("**Namespace:**", st.session_state['production_info'].get('namespace', 'N/A'))
-
-# 🏷️ **Chat Interface**
-for message in st.session_state['messages']:
-    with st.chat_message(message['role']):
-        st.markdown(message['content'])
-
-# 🏷️ **User Input**
-user_input = st.chat_input("Enter API description (one or multiple endpoints, one per line):")
-if user_input:
-    st.session_state['messages'].append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+if 'production_data' not in st.session_state:
+    st.session_state.production_data = ProductionData()
     
-    # ✅ Extract API specifications for each endpoint
-    responses = []
-    endpoints = user_input.strip().split("\n")
-    for endpoint_description in endpoints:
-        try:
-            extracted_data = extract_api_specs(endpoint_description)  # Correct function name
-            if isinstance(extracted_data, str):  
-                extracted_data = json.loads(extracted_data)  # Ensure JSON format
-            responses.append(extracted_data)
-        except json.JSONDecodeError:
-            st.error("⚠️ Error parsing extracted API specification.")
-            responses.append({"error": "Invalid JSON format in extracted data."})
-        except Exception as e:
-            st.error(f"⚠️ Error extracting API specification: {e}")
-            responses.append({"error": str(e)})
-    
-    # ✅ Combine into a single OpenAPI JSON
-    openapi_combined = {
-        "openapi": "3.0.0",
-        "info": {
-            "title": st.session_state['production_info'].get("production_name", "Unnamed Production"),
-            "version": "1.0.0"
-        },
-        "paths": {}
-    }
-    
-    for response in responses:
-        if isinstance(response, dict) and "error" in response:
-            response_text = f"❌ Error: {response['error']}"  
-        else:
-            response_text = "✅ Successfully extracted API specification."
+iris_service = IrisI14yService()
+
+st.subheader("Enter API Endpoints")
+st.write("Enter one endpoint per line. Example:")
+st.code("""
+    GET api.example.com/users to retrieve all users
+    POST api.example.com/users to create a new user
+""")
+
+endpoints_input = st.text_area("API Endpoints", height=200)
+
+if st.button("Process and Integrate"):
+    if endpoints_input:
+        with st.spinner("Processing endpoints and integrating with Iris..."):
             try:
-                openapi_combined["paths"].update(response.get("paths", {}))
+                result = process_api_integration(
+                    endpoints_input,
+                    st.session_state.production_data,
+                    iris_service
+                )
+                
+                st.subheader("Processing Results")
+                
+                review_status = result['review_details']['is_valid']
+                st.markdown(f"Review Status: {'✓ Approved' if review_status else '✗ Not Approved'}")
+                
+                iris_result = result['iris_integration']
+                status_color = "green" if iris_result['success'] else "red"
+                st.markdown(f"Iris Integration: <span style='color:{status_color}'>{iris_result['message']}</span>", 
+                            unsafe_allow_html=True)
+                
+                if 'iris_response' in iris_result:
+                    with st.expander("Iris Integration Details"):
+                        st.json(iris_result['iris_response'])
+                
+                st.subheader("OpenAPI Documentation")
+                tab1, tab2 = st.tabs(["YAML", "JSON"])
+                
+                with tab1:
+                    st.code(yaml.dump(result['openapi_documentation'], 
+                                    sort_keys=False),
+                            language='yaml')
+                with tab2:
+                    st.json(result['openapi_documentation'])
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.download_button(
+                        label="Download YAML",
+                        data=yaml.dump(result['openapi_documentation'], 
+                                        sort_keys=False),
+                        file_name="openapi_spec.yaml",
+                        mime="text/yaml"
+                    )
+                
+                with col2:
+                    st.download_button(
+                        label="Download JSON",
+                        data=json.dumps(result['openapi_documentation'], 
+                                        indent=2),
+                        file_name="openapi_spec.json",
+                        mime="application/json"
+                    )
+                
+                with col3:
+                    st.download_button(
+                        label="Download Integration Report",
+                        data=json.dumps({
+                            'review_details': result['review_details'],
+                            'iris_integration': result['iris_integration']
+                        }, indent=2),
+                        file_name="integration_report.json",
+                        mime="application/json"
+                    )
+            
             except Exception as e:
-                st.error(f"❌ Error processing API response: {e}")
-                response_text = f"Error: {e}"
-        
-        st.session_state['messages'].append({"role": "assistant", "content": response_text})
-        with st.chat_message("assistant"):
-            st.markdown(response_text)
-    
-    # 🏷️ **Show final OpenAPI JSON**
-    with st.expander("✅ View OpenAPI JSON"):
-        st.json(openapi_combined)
+                st.error(f"Processing Error: {str(e)}")
+    else:
+        st.warning("Please enter at least one endpoint.")
