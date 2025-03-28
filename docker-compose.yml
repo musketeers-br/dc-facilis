@@ -15,7 +15,8 @@ services:
     volumes:
       - ./:/home/irisowner/dev
     environment:
-      - OPENAI_API_KEY=$OPENAI_API_KEY
+      - AI_ENGINE=$AI_ENGINE
+      - API_KEY=$API_KEY
     networks:
       - default
     
