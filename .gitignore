@@ -3,3 +3,7 @@ iris-main.log
 .env
 .git
 
+python/__pycache__/
+__pycache__/
+/pycache/*
+/python/facilis/logs/
