@@ -38,11 +38,24 @@ cd dc-facilis
 ```
 
 ### 2️⃣ Set Up Environment Variables
-Create a `.env` file and configure your LLM provider:
+Facilis requires **two** `.env` files, one in the root directory and another in `python/facilis/`.
+
+#### Create `.env` files based on the provided samples
+```bash
+cp env_sample .env
+cp python/facilis/env_sample python/facilis/.env
+```
+
+#### Edit `.env` and `python/facilis/.env` with your settings
 ```ini
-AI_ENGINE=openai  # Options: openai, azureopenai, googleGemini, claude
+# AI Engine selection (choose one: openai, azureopenai, googleGemini, claude, ollama)
+AI_ENGINE=openai  
+
+# LLM Model Name
 LLM_MODEL_NAME=gpt-4o-mini
-API_KEY=your-api-key-here
+
+# API Key for the selected AI provider
+OPENAI_API_KEY=your-api-key-here
 ```
 
 ### 3️⃣ Run with Docker Compose
