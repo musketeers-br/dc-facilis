@@ -2,3 +2,9 @@
 # pandas==1.5.0
 python-dotenv
 pandas
+openai
+SQLAlchemy
+langchain
+langchain-openai
+langchain-iris
+langchain-community

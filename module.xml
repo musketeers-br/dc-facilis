@@ -8,6 +8,7 @@
       <Packaging>module</Packaging>
       <SourcesRoot>src</SourcesRoot>
       <Resource Name="dc.facilis.PKG"/>
+      <CSPApplication CookiePath="/csp/facilis/api/" DefaultTimeout="900" DispatchClass="dc.facilis.rest.Dispatch" MatchRoles=":%All" PasswordAuthEnabled="1" Recurse="1" ServeFiles="1" ServeFilesTimeout="3600" UnauthenticatedEnabled="1" Url="/csp/facilis/api" UseSessionCookie="2"/>
     </Module>
   </Document>
 </Export>
