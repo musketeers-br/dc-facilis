@@ -2,6 +2,6 @@
 # pandas==1.5.0
 python-dotenv
 databricks-sdk
-crewai==0.28.2
-openai==1.3.5
-pydantic==2.5.2
+crewai
+openai
+pydantic

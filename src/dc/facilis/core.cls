@@ -10,7 +10,7 @@ ClassMethod Execute(openapi As %String, Output response) As %Status
 }
 
 /// Generate Interoperability
-ClassMethod GenerateI14y(openapi As %String) As %String [ Language = python ]
+ClassMethod GenerateI14y(openApiSpec As %String) As %String [ Language = python ]
 {
     import os
     import json
@@ -527,7 +527,7 @@ ClassMethod GenerateI14y(openapi As %String) As %String [ Language = python ]
     )
     
     # Start the process
-    result = crew.kickoff(inputs={"openapi_spec": openapi_spec})
+    result = crew.kickoff(inputs={"openapi_spec": openApiSpec})
     print("\nConversion process completed!")
 }
 
