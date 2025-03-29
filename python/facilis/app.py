@@ -9,10 +9,9 @@ image_path = current_dir / "logo.png"
 
 st.markdown("""
     <style>
-        /* Center the image and make it full width */
-        .full-width-image {
-            width: 100%;
-            margin-bottom: 1rem;
+        /* Center the image container */
+        .block-container {
+            padding-top: 1rem;
         }
         
         /* Custom title styling */
@@ -24,19 +23,16 @@ st.markdown("""
             padding: 1rem 0;
             margin-bottom: 2rem;
         }
-        
-        /* Container for better spacing */
-        .container {
-            padding: 0;
-            margin: 0;
-        }
     </style>
 """, unsafe_allow_html=True)
 
-with st.container():
-    # Display the image
-    st.image(str(image_path), use_container_width=True) 
-    
+# Create three columns to center the image
+col1, col2, col3 = st.columns([1, 2, 1])
+
+# Use the middle column to display the image
+with col2:
+    st.image(str(image_path), width=215)  # Set exact width, height will maintain aspect ratio
+
 if 'production_data' not in st.session_state:
     st.session_state.production_data = ProductionData()
     
@@ -63,60 +59,69 @@ if st.button("Process and Integrate"):
                 
                 st.subheader("Processing Results")
                 
-                review_status = result['review_details']['is_valid']
+                # Safely access review details
+                review_details = result.get('review_details', {})
+                review_status = review_details.get('is_valid', False)
                 st.markdown(f"Review Status: {'✓ Approved' if review_status else '✗ Not Approved'}")
                 
-                iris_result = result['iris_integration']
-                status_color = "green" if iris_result['success'] else "red"
-                st.markdown(f"Iris Integration: <span style='color:{status_color}'>{iris_result['message']}</span>", 
-                            unsafe_allow_html=True)
+                # Safely access iris integration results
+                iris_result = result.get('iris_integration', {})
+                if isinstance(iris_result, dict):
+                    status_color = "green" if iris_result.get('success', False) else "red"
+                    message = iris_result.get('message', 'No message available')
+                    st.markdown(f"Iris Integration: <span style='color:{status_color}'>{message}</span>", 
+                                unsafe_allow_html=True)
+                    
+                    if 'iris_response' in iris_result:
+                        with st.expander("Iris Integration Details"):
+                            st.json(iris_result['iris_response'])
+                else:
+                    st.error("Invalid Iris integration result format")
                 
-                if 'iris_response' in iris_result:
-                    with st.expander("Iris Integration Details"):
-                        st.json(iris_result['iris_response'])
-                
-                st.subheader("OpenAPI Documentation")
-                tab1, tab2 = st.tabs(["YAML", "JSON"])
-                
-                with tab1:
-                    st.code(yaml.dump(result['openapi_documentation'], 
-                                    sort_keys=False),
-                            language='yaml')
-                with tab2:
-                    st.json(result['openapi_documentation'])
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.download_button(
-                        label="Download YAML",
-                        data=yaml.dump(result['openapi_documentation'], 
-                                        sort_keys=False),
-                        file_name="openapi_spec.yaml",
-                        mime="text/yaml"
-                    )
-                
-                with col2:
-                    st.download_button(
-                        label="Download JSON",
-                        data=json.dumps(result['openapi_documentation'], 
-                                        indent=2),
-                        file_name="openapi_spec.json",
-                        mime="application/json"
-                    )
-                
-                with col3:
-                    st.download_button(
-                        label="Download Integration Report",
-                        data=json.dumps({
-                            'review_details': result['review_details'],
-                            'iris_integration': result['iris_integration']
-                        }, indent=2),
-                        file_name="integration_report.json",
-                        mime="application/json"
-                    )
+                # Only show OpenAPI documentation if we have it
+                openapi_doc = result.get('openapi_documentation')
+                if openapi_doc:
+                    st.subheader("OpenAPI Documentation")
+                    tab1, tab2 = st.tabs(["YAML", "JSON"])
+                    
+                    with tab1:
+                        st.code(yaml.dump(openapi_doc, sort_keys=False),
+                                language='yaml')
+                    with tab2:
+                        st.json(openapi_doc)
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.download_button(
+                            label="Download YAML",
+                            data=yaml.dump(openapi_doc, sort_keys=False),
+                            file_name="openapi_spec.yaml",
+                            mime="text/yaml"
+                        )
+                    
+                    with col2:
+                        st.download_button(
+                            label="Download JSON",
+                            data=json.dumps(openapi_doc, indent=2),
+                            file_name="openapi_spec.json",
+                            mime="application/json"
+                        )
+                    
+                    with col3:
+                        report_data = {
+                            'review_details': review_details,
+                            'iris_integration': iris_result
+                        }
+                        st.download_button(
+                            label="Download Integration Report",
+                            data=json.dumps(report_data, indent=2),
+                            file_name="integration_report.json",
+                            mime="application/json"
+                        )
             
             except Exception as e:
                 st.error(f"Processing Error: {str(e)}")
+                st.error("Please check the logs for more details.")
     else:
         st.warning("Please enter at least one endpoint.")

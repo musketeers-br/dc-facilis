@@ -347,13 +347,36 @@ class APISpecificationCrew:
                 
                 Review Checklist:
                 1. OpenAPI 3.0 Compliance
-                2. Completeness
-                3. Quality Checks
-                4. Best Practices
+                - Verify correct version specification
+                - Check required root elements
+                - Validate schema structure
                 
-                Return a detailed review result in JSON format.
+                2. Completeness
+                - All endpoints properly documented
+                - Parameters fully specified
+                - Request/response schemas defined
+                - Security schemes properly configured
+                
+                3. Quality Checks
+                - Consistent naming conventions
+                - Clear descriptions
+                - Proper use of data types
+                - Meaningful response codes
+                
+                4. Best Practices
+                - Proper tag usage
+                - Consistent parameter naming
+                - Appropriate security definitions
+                
+                You must return a JSON object with the following structure:
+                {{
+                    "is_valid": boolean,
+                    "approved_spec": object (the reviewed and possibly corrected OpenAPI spec),
+                    "issues": [array of strings describing any issues found],
+                    "recommendations": [array of improvement suggestions]
+                }}
             """),
-            expected_output="""A JSON object containing the review results, including validation status and any issues found""",
+            expected_output="""A JSON object containing: is_valid (boolean), approved_spec (object), issues (array), and recommendations (array)""",
             agent=self.reviewer_agent
         )
 
@@ -427,28 +450,51 @@ def extract_json_from_markdown(markdown_text: str) -> str:
         # Convert the CrewOutput to string if it isn't already
         text = str(markdown_text)
         
-        # Find the first occurrence of '{'
+        # If the text is already a valid JSON string, return it
+        try:
+            json.loads(text)
+            return text
+        except json.JSONDecodeError:
+            pass
+
+        # Try to extract JSON from markdown code blocks
+        if '```json' in text:
+            # Split by ```json and take the content after it
+            parts = text.split('```json')
+            if len(parts) > 1:
+                # Split by ``` to get the content between the code block
+                json_text = parts[1].split('```')[0]
+                return json_text.strip()
+        elif '```' in text:
+            # Split by ``` and take the content between code blocks
+            parts = text.split('```')
+            if len(parts) > 1:
+                potential_json = parts[1].strip()
+                try:
+                    json.loads(potential_json)
+                    return potential_json
+                except json.JSONDecodeError:
+                    pass
+
+        # If no code blocks, try to find JSON between curly braces
         start = text.find('{')
-        # Find the last occurrence of '}'
         end = text.rindex('}') + 1
         
-        if start == -1 or end == 0:
-            logger.warning("No JSON object found in markdown text")
-            return text
-        
-        # Extract everything between the first { and last }
-        json_str = text[start:end]
-        
-        # Validate that this is valid JSON
-        json.loads(json_str)  # This will raise JSONDecodeError if invalid
-        
-        return json_str
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON from markdown: {e}")
-        raise
-    except ValueError as e:
+        if start != -1 and end > start:
+            json_str = text[start:end]
+            # Validate that this is valid JSON
+            json.loads(json_str)
+            return json_str
+            
+        # If we couldn't find valid JSON, try to create a simple JSON object
+        # from the text itself
+        return json.dumps({"response": text})
+
+    except Exception as e:
         logger.error(f"Failed to extract JSON from markdown: {e}")
-        raise
+        logger.debug(f"Original text: {text}")
+        # Return a simple JSON object with the original text
+        return json.dumps({"error": "Failed to parse response", "raw_response": text})
 
 def process_api_integration(user_input: str, production_data: ProductionData, iris_service: IrisI14yService) -> Dict:
     logger = logging.getLogger('facilis.process_api_integration')
@@ -482,101 +528,129 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
         verbose=True
     )
 
-    production_result = api_crew.kickoff()
-    production_info = json.loads(extract_json_from_markdown(production_result))
-    
-    if production_info['create_new']:
-        logger.info(f"Creating new production: {production_info['production_name']}")
-        crew.production_data.add_production(
-            production_info['production_name'],
-            production_info['namespace']
+
+    try:
+        production_result = api_crew.kickoff()
+        production_info = json.loads(extract_json_from_markdown(production_result))
+        
+        if not isinstance(production_info, dict):
+            raise ValueError("Invalid production info format")
+        
+        if production_info['create_new']:
+            logger.info(f"Creating new production: {production_info['production_name']}")
+            crew.production_data.add_production(
+                production_info['production_name'],
+                production_info['namespace']
+            )
+
+        # Extract API specs
+        logger.info("Extracting API specifications")
+        api_crew = Crew(
+            agents=[crew.extraction_agent],
+            tasks=[crew.extract_api_specs(endpoints)],
+            verbose=True
         )
 
-    # Extract API specs
-    logger.info("Extracting API specifications")
-    api_crew = Crew(
-        agents=[crew.extraction_agent],
-        tasks=[crew.extract_api_specs(endpoints)],
-        verbose=True
-    )
-    extracted_results = json.loads(extract_json_from_markdown(api_crew.kickoff()))
-    
-    final_endpoints = []
-    for endpoint_spec in extracted_results:
-        logger.info(f"Processing endpoint: {endpoint_spec.get('endpoint', 'unknown')}")
-        missing_fields = [k for k, v in endpoint_spec.items() if v == 'missing']
-        if missing_fields:
-            logger.info(f"Handling missing fields: {missing_fields}")
+        extracted_json = extract_json_from_markdown(api_crew.kickoff())
+        extracted_results = json.loads(extracted_json)
+        
+        if not isinstance(extracted_results, list):
+            extracted_results = [extracted_results] if extracted_results else []
+
+        final_endpoints = []
+        for endpoint_spec in extracted_results:
+            if not isinstance(endpoint_spec, dict):
+                logger.warning(f"Skipping invalid endpoint spec: {endpoint_spec}")
+                continue
+                
+            logger.info(f"Processing endpoint: {endpoint_spec.get('endpoint', 'unknown')}")
+            missing_fields = [k for k, v in endpoint_spec.items() if v == 'missing']
+            if missing_fields:
+                logger.info(f"Handling missing fields: {missing_fields}")
+                api_crew = Crew(
+                    agents=[crew.interaction_agent],
+                    tasks=[crew.handle_missing_fields(missing_fields, endpoint_spec)],
+                    verbose=True
+                )
+
+                updated_json = extract_json_from_markdown(api_crew.kickoff())
+                try:
+                    updated_spec = json.loads(updated_json)
+                    if isinstance(updated_spec, dict):
+                        endpoint_spec.update(updated_spec)
+                except (json.JSONDecodeError, AttributeError) as e:
+                    logger.error(f"Failed to update endpoint spec: {e}")
+
+            logger.info("Validating endpoint specification")
             api_crew = Crew(
-                agents=[crew.interaction_agent],
-                tasks=[crew.handle_missing_fields(missing_fields, endpoint_spec)],
+                agents=[crew.validation_agent],
+                tasks=[crew.validate_api_spec(endpoint_spec)],
                 verbose=True
             )
-            updated_spec = json.loads(extract_json_from_markdown(api_crew.kickoff()))
-            endpoint_spec.update(updated_spec)
-        
-        logger.info("Validating endpoint specification")
+
+            validation_json = extract_json_from_markdown(api_crew.kickoff())
+            validation_result = json.loads(validation_json)
+            
+            if isinstance(validation_result, dict) and 'error' not in validation_result:
+                logger.info("Endpoint validation successful")
+                final_endpoints.append(endpoint_spec)
+                crew.production_data.add_endpoint(production_info['production_name'], endpoint_spec)
+            else:
+                logger.warning(f"Endpoint validation failed: {validation_result}")
+
+        logger.info("Transforming to OpenAPI specification")
         api_crew = Crew(
-            agents=[crew.validation_agent],
-            tasks=[crew.validate_api_spec(endpoint_spec)],
+            agents=[crew.transformation_agent],
+            tasks=[crew.transform_to_openapi(final_endpoints, production_info)],
             verbose=True
         )
-        validation_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
+        openapi_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
+
+        logger.info("Reviewing OpenAPI documentation")
+        api_crew = Crew(
+            agents=[crew.reviewer_agent],
+            tasks=[crew.review_openapi_spec(openapi_result)],
+            verbose=True
+        )
+        review_json = extract_json_from_markdown(api_crew.kickoff())
+        review_result = json.loads(review_json)
         
-        if 'error' not in validation_result:
-            logger.info("Endpoint validation successful")
-            final_endpoints.append(endpoint_spec)
-            crew.production_data.add_endpoint(production_info['production_name'], endpoint_spec)
+        # Add validation and default values
+        if not isinstance(review_result, dict):
+            logger.warning("Invalid review result format, using default structure")
+            review_result = {
+                "is_valid": False,
+                "approved_spec": openapi_result,
+                "issues": ["Invalid review result format"],
+                "recommendations": []
+            }
+        
+        # Ensure required keys exist
+        review_result.setdefault("is_valid", False)
+        review_result.setdefault("approved_spec", openapi_result)
+        review_result.setdefault("issues", [])
+        review_result.setdefault("recommendations", [])
+
+        if review_result["is_valid"]:
+            logger.info("OpenAPI specification approved, sending to Iris")
+            api_crew = Crew(
+                agents=[crew.iris_i14y_agent],
+                tasks=[crew.send_to_iris(review_result["approved_spec"], production_info, review_result)],
+                verbose=True
+            )
+            iris_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
         else:
-            logger.warning(f"Endpoint validation failed: {validation_result.get('error')}")
+            logger.warning("OpenAPI specification not approved for integration")
+            iris_result = {
+                "success": False,
+                "message": "OpenAPI specification not approved for integration",
+                "timestamp": datetime.now().isoformat(),
+                "issues": review_result.get("issues", [])
+            }
 
-    logger.info("Transforming to OpenAPI specification")
-    api_crew = Crew(
-        agents=[crew.transformation_agent],
-        tasks=[crew.transform_to_openapi(final_endpoints, production_info)],
-        verbose=True
-    )
-    openapi_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
-
-    logger.info("Reviewing OpenAPI documentation")
-    api_crew = Crew(
-        agents=[crew.reviewer_agent],
-        tasks=[crew.review_openapi_spec(openapi_result)],
-        verbose=True
-    )
-    review_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
-
-    if review_result['is_valid']:
-        logger.info("OpenAPI specification approved, sending to Iris")
-        api_crew = Crew(
-            agents=[crew.iris_i14y_agent],
-            tasks=[crew.send_to_iris(openapi_result, production_info, review_result)],
-            verbose=True
-        )
-        iris_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
-    else:
-        logger.warning("OpenAPI specification not approved for integration")
-        iris_result = {
-            "success": False,
-            "message": "OpenAPI specification not approved for integration",
-            "timestamp": datetime.now().isoformat()
-        }
-
-    if review_result['is_valid']:
-        logger.info("OpenAPI specification approved, sending to Iris")
-        api_crew = Crew(
-            agents=[crew.iris_i14y_agent],
-            tasks=[crew.send_to_iris(openapi_result, production_info, review_result)],
-            verbose=True
-        )
-        iris_result = json.loads(str(api_crew.kickoff()))
-    else:
-        logger.warning("OpenAPI specification not approved for integration")
-        iris_result = {
-            "success": False,
-            "message": "OpenAPI specification not approved for integration",
-            "timestamp": datetime.now().isoformat()
-        }
+    except Exception as e:
+        logger.error(f"Error in process_api_integration: {str(e)}")
+        raise
 
     logger.info("API integration process completed")
     return {
