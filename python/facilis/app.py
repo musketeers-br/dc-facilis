@@ -2,9 +2,41 @@ import streamlit as st
 import yaml
 import json
 from facilis import IrisI14yService, ProductionData, process_api_integration
+from pathlib import Path
 
-st.title("Facilis API Integration Manager")
+current_dir = Path(__file__).parent
+image_path = current_dir / "logo.png"
 
+st.markdown("""
+    <style>
+        /* Center the image and make it full width */
+        .full-width-image {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        
+        /* Custom title styling */
+        .custom-title {
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: #1E1E1E;
+            text-align: center;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        /* Container for better spacing */
+        .container {
+            padding: 0;
+            margin: 0;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+with st.container():
+    # Display the image
+    st.image(str(image_path), use_container_width=True) 
+    
 if 'production_data' not in st.session_state:
     st.session_state.production_data = ProductionData()
     
