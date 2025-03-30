@@ -24,6 +24,9 @@ ENV IRISNAMESPACE $NAMESPACE
 ENV PYTHON_PATH=/usr/irissys/bin/
 ENV PATH "/usr/irissys/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/irisowner/bin"
 
+# those are breaking the build when installed from requirements.txt, so I move them here until I can figure out why
+RUN pip install -q python-dotenv openai pydantic crewai crewai-tools databricks-sdk duckduckgo_search
+
 COPY .iris_init /home/irisowner/.iris_init
 
 RUN --mount=type=bind,src=.,dst=. \
