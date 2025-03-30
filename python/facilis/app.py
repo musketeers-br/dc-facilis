@@ -49,12 +49,16 @@ endpoints_input = st.text_area("API Endpoints", height=200)
 
 if st.button("Process and Integrate"):
     if endpoints_input:
-        with st.spinner("Processing endpoints and integrating with Iris..."):
+        status_container = st.container()
+        #with st.spinner("Processing endpoints and integrating with Iris..."):
+        with status_container:
+            st.subheader("Processing Endpoints and Integrating with Iris")
             try:
                 result = process_api_integration(
                     endpoints_input,
                     st.session_state.production_data,
-                    iris_service
+                    iris_service,
+                    st_container=status_container
                 )
                 
                 st.subheader("Processing Results")
