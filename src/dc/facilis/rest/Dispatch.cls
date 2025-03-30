@@ -1,8 +1,7 @@
 Class dc.facilis.rest.Dispatch Extends %CSP.REST
 {
 
-/// Ignore any writes done directly by the REST method.
-Parameter IgnoreWrites = 1;
+Parameter HandleCorsRequest = "true";
 
 /// By default convert the input stream to Unicode
 Parameter CONVERTINPUTSTREAM = 1;

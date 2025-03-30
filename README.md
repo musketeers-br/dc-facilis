@@ -1,4 +1,4 @@
- [![Gitter](https://img.shields.io/badge/Available%20on-Intersystems%20Open%20Exchange-00b2a9.svg)](https://openexchange.intersystems.com/package/intersystems-iris-dev-template)
+ [![Gitter](https://img.shields.io/badge/Available%20on-Intersystems%20Open%20Exchange-00b2a9.svg)](https://openexchange.intersystems.com/package/Facilis)
  [![Quality Gate Status](https://community.objectscriptquality.com/api/project_badges/measure?project=intersystems_iris_community%2Fintersystems-iris-dev-template&metric=alert_status)](https://community.objectscriptquality.com/dashboard?id=intersystems_iris_community%2Fintersystems-iris-dev-template)
  [![Reliability Rating](https://community.objectscriptquality.com/api/project_badges/measure?project=intersystems_iris_community%2Fintersystems-iris-dev-template&metric=reliability_rating)](https://community.objectscriptquality.com/dashboard?id=intersystems_iris_community%2Fintersystems-iris-dev-template)
 
@@ -38,11 +38,24 @@ cd dc-facilis
 ```
 
 ### 2️⃣ Set Up Environment Variables
-Create a `.env` file and configure your LLM provider:
+Facilis requires **two** `.env` files, one in the root directory and another in `python/facilis/`.
+
+#### Create `.env` files based on the provided samples
+```bash
+cp env_sample .env
+cp python/facilis/env_sample python/facilis/.env
+```
+
+#### Edit `.env` and `python/facilis/.env` with your settings
 ```ini
-AI_ENGINE=openai  # Options: openai, azureopenai, googleGemini, claude
+# AI Engine selection (choose one: openai, azureopenai, googleGemini, claude, ollama)
+AI_ENGINE=openai  
+
+# LLM Model Name
 LLM_MODEL_NAME=gpt-4o-mini
-API_KEY=your-api-key-here
+
+# API Key for the selected AI provider
+OPENAI_API_KEY=your-api-key-here
 ```
 
 ### 3️⃣ Run with Docker Compose

@@ -6,10 +6,11 @@ from crewai import Agent, Task, Crew
 from textwrap import dedent
 import json
 import requests
-from typing import List, Dict
+from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
+import streamlit as st
 
 load_dotenv()
 os.makedirs('logs', exist_ok=True)
@@ -23,6 +24,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger('facilis')
 
+class StreamlitLoggingCallback:
+    def __init__(self, container: Optional[Any] = None):
+        self.container = container or st
+        self.current_agent: Optional[str] = None
+        self.logger = logging.getLogger('facilis.StreamlitCallback')
+
+    def on_crew_start(self):
+        self.logger.info("Starting CrewAI workflow")
+        self.container.info("🚀 Starting API integration process...")
+
+    def on_crew_end(self):
+        self.logger.info("CrewAI workflow completed")
+        self.container.success("✅ API integration process completed!")
+
+    def on_agent_start(self, agent: Agent, task: Task):
+        self.current_agent = agent.role
+        message = f"👤 Agent '{agent.role}' starting task: {task.description[:100]}..."
+        self.logger.info(message)
+        self.container.info(message)
+
+    def on_agent_end(self, agent: Agent, task: Task):
+        message = f"✨ Agent '{agent.role}' completed their task!"
+        self.logger.info(message)
+        self.container.success(message)
+
+    def on_agent_error(self, agent: Agent, task: Task, error: Exception):
+        message = f"❌ Error in agent '{agent.role}': {str(error)}"
+        self.logger.error(message)
+        self.container.error(message)
 
 class IrisIntegrationError(Exception):
     """Custom exception for Iris integration errors"""
@@ -226,7 +256,8 @@ class APIAgents:
         )
 
 class APISpecificationCrew:
-    def __init__(self, llm, production_data: ProductionData, iris_service: IrisI14yService):
+    def __init__(self, llm, production_data: ProductionData, iris_service: IrisI14yService, callback=None):
+        self.callback = callback
         api_agents = APIAgents(llm, iris_service)
         self.production_agent = api_agents.create_production_agent()
         self.interaction_agent = api_agents.create_interaction_agent()
@@ -239,6 +270,8 @@ class APISpecificationCrew:
         self.iris_service = iris_service
 
     def get_production_details(self) -> Task:
+        if self.callback:
+            self.callback.on_agent_start(self.production_agent, "Getting production details")
         return Task(
             description=dedent("""
                 Interact with the user to obtain:
@@ -496,10 +529,13 @@ def extract_json_from_markdown(markdown_text: str) -> str:
         # Return a simple JSON object with the original text
         return json.dumps({"error": "Failed to parse response", "raw_response": text})
 
-def process_api_integration(user_input: str, production_data: ProductionData, iris_service: IrisI14yService) -> Dict:
+def process_api_integration(user_input: str, production_data: ProductionData, iris_service: IrisI14yService, st_container=None) -> Dict:
     logger = logging.getLogger('facilis.process_api_integration')
     logger.info("Starting API integration process")
 
+    # Create the callback
+    callback = StreamlitLoggingCallback(st_container)
+    
     llm = get_facilis_llm()
     if llm is None:
         logger.error("Invalid AI_ENGINE selection")
@@ -511,6 +547,7 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
     # Process endpoints
     logger.info("Processing endpoints")
     endpoints = user_input.split('\n')
+    callback.on_crew_start()
     
     # Get production details
     logger.info("Getting production details")
@@ -649,8 +686,11 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
             }
 
     except Exception as e:
+        callback.on_agent_error(crew.current_agent, str(e))
         logger.error(f"Error in process_api_integration: {str(e)}")
         raise
+    finally:
+        callback.on_crew_end()
 
     logger.info("API integration process completed")
     return {

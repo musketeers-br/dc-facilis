@@ -17,6 +17,7 @@ services:
     environment:
       - AI_ENGINE=$AI_ENGINE
       - API_KEY=$API_KEY
+      - LLM_MODEL_NAME=$LLM_MODEL_NAME
     networks:
       - default
     

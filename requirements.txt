@@ -1,10 +1,6 @@
-# numpy==1.23.4
-# pandas==1.5.0
-python-dotenv
-pandas
-openai
-SQLAlchemy
-langchain
-langchain-openai
-langchain-iris
-langchain-community
+# those are breaking the build when installed from requirements.txt, so I move them to Dockerfile until I can figure out why
+# python-dotenv
+# databricks-sdk
+# crewai
+# openai
+# pydantic
