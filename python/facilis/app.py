@@ -53,10 +53,6 @@ st.markdown("""
     - Create interoperability with your InterSystems IRIS environment
     """)
 
-st.subheader("Enter API Endpoints")
-st.write("Enter one endpoint per line with description. Example:")
-st.code("""I want to retrieve all users from api.example.com/users using GET method and also create a new user POST api.example.com/users""")
-
 # Initialize session state if needed
 if 'processing' not in st.session_state:
     st.session_state.processing = False
@@ -65,11 +61,12 @@ input_container = st.container()
 status_container = st.container()
 result_container = st.container()
 
-
 with input_container:
-    endpoints_input = st.text_area("API Endpoints",
+    endpoints_input = st.text_area("Prompt",
         height=150,
-        help="Enter endpoint descriptions, one per line"
+        help="Enter endpoint descriptions, one per line",
+        placeholder="I want to retrieve all users from api.example.com/users using GET method and also create a new user POST api.example.com/users",
+        key="endpoints_input"
     )
     
     if st.button("Process APIs"):
