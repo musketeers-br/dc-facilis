@@ -29,6 +29,7 @@ class StreamlitLoggingCallback:
         self.container = container or st
         self.current_agent: Optional[str] = None
         self.logger = logging.getLogger('facilis.StreamlitCallback')
+        self.user_inputs = {}
 
     def on_crew_start(self):
         self.logger.info("Starting CrewAI workflow")
@@ -53,6 +54,62 @@ class StreamlitLoggingCallback:
         message = f"❌ Error in agent '{agent.role}': {str(error)}"
         self.logger.error(message)
         self.container.error(message)
+
+    def request_user_input(self, field: str, field_type: str = "text", options: List = None) -> Any:
+        """
+        Request input from the user through Streamlit interface
+        """
+        self.logger.info(f"Requesting user input for: {field}")
+        
+        # Create a unique key for each input field
+        input_key = f"user_input_{field}_{datetime.now().timestamp()}"
+        
+        self.container.write(f"📝 Please provide the following information:")
+        
+        if field_type == "text":
+            user_input = self.container.text_input(f"Enter {field}:", key=input_key)
+        elif field_type == "select" and options:
+            user_input = self.container.selectbox(f"Select {field}:", options, key=input_key)
+        elif field_type == "json":
+            user_input = self.container.text_area(
+                f"Enter JSON model for {field}:",
+                height=150,
+                key=input_key,
+                help="Enter a valid JSON object"
+            )
+        
+        if user_input:
+            self.user_inputs[field] = user_input
+            return user_input
+        return None
+
+    def get_http_method(self) -> str:
+        """
+        Get HTTP method from user with validation
+        """
+        valid_methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        return self.request_user_input(
+            "HTTP Method",
+            field_type="select",
+            options=valid_methods
+        )
+
+    def get_json_model(self, endpoint: str) -> Dict:
+        """
+        Get JSON model from user with validation
+        """
+        while True:
+            json_str = self.request_user_input(
+                f"JSON model for {endpoint}",
+                field_type="json"
+            )
+            if not json_str:
+                return None
+            
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                self.container.error("Invalid JSON format. Please try again.")
 
 class IrisIntegrationError(Exception):
     """Custom exception for Iris integration errors"""
@@ -294,15 +351,61 @@ class APISpecificationCrew:
         )
 
     def handle_missing_fields(self, missing_fields: List[str], endpoint_info: Dict) -> Task:
-        return Task(
-            description=dedent(f"""
-                Request the following missing fields from the user for endpoint {endpoint_info.get('endpoint', 'unknown')}:
-                {', '.join(missing_fields)}
+        description = dedent(f"""
+            The following fields are missing for endpoint {endpoint_info.get('endpoint', 'unknown')}:
+            {', '.join(missing_fields)}
+            
+            Current endpoint info: {json.dumps(endpoint_info, indent=2)}
+            
+            For each missing field:
+            1. If HTTP_Method: Must be one of GET, POST, PUT, DELETE, PATCH
+            2. If json_model: Required for POST/PUT/PATCH methods
+            3. If params: List of parameter names
+            4. If production_name: Name of the production environment
+            5. If namespace: Namespace for the production
+            
+            Return the collected information in JSON format.
+        """)
+
+        if self.callback:
+            updated_fields = {}
+            
+            for field in missing_fields:
+                if field == "HTTP_Method":
+                    method = self.callback.get_http_method()
+                    if method:
+                        updated_fields[field] = method
                 
-                For POST/PUT/PATCH/DELETE methods, ensure JSON model is provided.
-                Current endpoint info: {json.dumps(endpoint_info, indent=2)}
-            """),
-            expected_output="""A JSON object containing the updated field values for the endpoint specification""",
+                elif field == "json_model":
+                    if endpoint_info.get("HTTP_Method", "").upper() in ["POST", "PUT", "PATCH"]:
+                        json_model = self.callback.get_json_model(endpoint_info.get("endpoint", ""))
+                        if json_model:
+                            updated_fields[field] = json_model
+                
+                elif field == "production_name":
+                    name = self.callback.request_user_input("production name")
+                    if name:
+                        updated_fields[field] = name
+                
+                elif field == "namespace":
+                    namespace = self.callback.request_user_input("namespace")
+                    if namespace:
+                        updated_fields[field] = namespace
+                
+                else:
+                    value = self.callback.request_user_input(field)
+                    if value:
+                        updated_fields[field] = value
+            
+            return Task(
+                description=f"Process collected user inputs: {json.dumps(updated_fields, indent=2)}",
+                expected_output="A JSON object containing the updated field values",
+                agent=self.interaction_agent
+            )
+        
+        return Task(
+            description=description,
+            expected_output="A JSON object containing the updated field values",
             agent=self.interaction_agent
         )
 
