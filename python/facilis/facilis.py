@@ -27,7 +27,7 @@ logger = logging.getLogger('facilis')
 class StreamlitLoggingCallback:
     def __init__(self, container: Optional[Any] = None):
         self.container = container or st
-        self.current_agent: Optional[str] = None
+        self.current_agent = None
         self.logger = logging.getLogger('facilis.StreamlitCallback')
         self.user_inputs = {}
 
@@ -39,23 +39,33 @@ class StreamlitLoggingCallback:
         self.logger.info("CrewAI workflow completed")
         self.container.success("✅ API integration process completed!")
 
-    def on_agent_start(self, agent: Agent, task: Task):
-        self.current_agent = agent.role
-        message = f"👤 Agent '{agent.role}' starting task: {task.description[:100]}..."
+    def on_agent_start(self, agent: Agent, task: Any):
+        self.current_agent = agent
+        # Handle both string and Task objects
+        task_description = task.description if hasattr(task, 'description') else str(task)
+        message = f"👤 Agent '{agent.role}' starting task: {task_description[:100]}..."
         self.logger.info(message)
         self.container.info(message)
 
-    def on_agent_end(self, agent: Agent, task: Task):
-        message = f"✨ Agent '{agent.role}' completed their task!"
+    def on_agent_end(self, agent: Agent, task: Any):
+        self.current_agent = None
+        # Handle both string and Task objects
+        task_description = task.description if hasattr(task, 'description') else str(task)
+        message = f"✨ Agent '{agent.role}' completed task: {task_description[:100]}"
         self.logger.info(message)
         self.container.success(message)
 
-    def on_agent_error(self, agent: Agent, task: Task, error: Exception):
-        message = f"❌ Error in agent '{agent.role}': {str(error)}"
+    def on_agent_error(self, agent: Any, task: Any, error: Exception):
+        # Handle cases where agent might be a string or Agent object
+        agent_role = agent.role if hasattr(agent, 'role') else str(agent)
+        # Handle cases where task might be a string or Task object
+        task_description = task.description if hasattr(task, 'description') else str(task)
+        
+        message = f"❌ Error in agent '{agent_role}' during task: {task_description[:100]}\nError: {str(error)}"
         self.logger.error(message)
         self.container.error(message)
 
-    def request_user_input(self, field: str, field_type: str = "text", options: List = None) -> Any:
+    def request_user_input(self, field: str, field_type: str = "text", options: List = None, required: bool = False) -> Any:
         """
         Request input from the user through Streamlit interface
         """
@@ -65,23 +75,41 @@ class StreamlitLoggingCallback:
         input_key = f"user_input_{field}_{datetime.now().timestamp()}"
         
         self.container.write(f"📝 Please provide the following information:")
+        label = f"Enter {field}:" if not required else f"Enter {field} (required):"
         
-        if field_type == "text":
-            user_input = self.container.text_input(f"Enter {field}:", key=input_key)
-        elif field_type == "select" and options:
-            user_input = self.container.selectbox(f"Select {field}:", options, key=input_key)
-        elif field_type == "json":
-            user_input = self.container.text_area(
-                f"Enter JSON model for {field}:",
-                height=150,
-                key=input_key,
-                help="Enter a valid JSON object"
-            )
+        while True:
+            if field_type == "text":
+                user_input = self.container.text_input(label, key=input_key)
+            elif field_type == "select" and options:
+                user_input = self.container.selectbox(label, options, key=input_key)
+            elif field_type == "json":
+                user_input = self.container.text_area(
+                    label,
+                    height=150,
+                    key=input_key,
+                    help="Enter a valid JSON object"
+                )
+            
+            if user_input or not required:
+                if user_input:
+                    self.user_inputs[field] = user_input
+                return user_input
+            else:
+                self.container.error(f"{field} is required. Please provide a value.")
+                # Sleep briefly to prevent too many rapid updates
+
+    def get_production_details(self) -> Dict[str, str]:
+        """
+        Get required production details from user
+        """
+        production_name = self.request_user_input("production name", required=True)
+        namespace = self.request_user_input("namespace", required=True)
         
-        if user_input:
-            self.user_inputs[field] = user_input
-            return user_input
-        return None
+        return {
+            "production_name": production_name,
+            "namespace": namespace
+        }
+
 
     def get_http_method(self) -> str:
         """
@@ -193,28 +221,35 @@ class OpenAPITransformer:
 class IrisI14yService:
     def __init__(self):
         self.logger = logging.getLogger('facilis.IrisI14yService')
-        self.base_url = os.getenv("IRIS_BASE_URL", "xxx")
-        auth = ""
-        if (os.getenv("IRIS_USERNAME") and os.getenv("IRIS_PASSWORD")):
-            auth = f"{os.getenv('IRIS_USERNAME')}:{os.getenv('IRIS_PASSWORD')}"
+        self.base_url = os.getenv("FACILIS_URL", "http://localhost:58316") 
         self.headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {auth}" if auth else None
+            "Content-Type": "application/json"
         }
         self.logger.info("IrisI14yService initialized")
 
     def send_to_iris(self, payload: Dict) -> Dict:
-        self.logger.info("Sending payload to Iris")
+        """
+        Send payload to Iris generate endpoint
+        
+        Args:
+            payload: Dictionary containing:
+                - production_name: str
+                - namespace: str
+                - openapi_spec: Dict
+        """
+        self.logger.info("Sending payload to Iris generate endpoint")
         try:
             response = requests.post(
-                f"{self.base_url}/facilis",
+                f"{self.base_url}/facilis/api/generate",
                 json=payload,
                 headers=self.headers
             )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            raise IrisIntegrationError(f"Failed to send to Iris: {str(e)}")
+            error_msg = f"Failed to send to Iris: {str(e)}"
+            self.logger.error(error_msg)
+            raise IrisIntegrationError(error_msg)
 
 class APIAgents:
     def __init__(self, llm, iris_service: IrisI14yService):
@@ -315,6 +350,7 @@ class APIAgents:
 class APISpecificationCrew:
     def __init__(self, llm, production_data: ProductionData, iris_service: IrisI14yService, callback=None):
         self.callback = callback
+        self.current_agent = None 
         api_agents = APIAgents(llm, iris_service)
         self.production_agent = api_agents.create_production_agent()
         self.interaction_agent = api_agents.create_interaction_agent()
@@ -632,6 +668,7 @@ def extract_json_from_markdown(markdown_text: str) -> str:
         # Return a simple JSON object with the original text
         return json.dumps({"error": "Failed to parse response", "raw_response": text})
 
+
 def process_api_integration(user_input: str, production_data: ProductionData, iris_service: IrisI14yService, st_container=None) -> Dict:
     logger = logging.getLogger('facilis.process_api_integration')
     logger.info("Starting API integration process")
@@ -645,8 +682,9 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
         raise ValueError("Invalid AI_ENGINE selection")
 
     logger.info("Creating APISpecificationCrew")
-    crew = APISpecificationCrew(llm, production_data, iris_service)
+    crew = APISpecificationCrew(llm, production_data, iris_service, callback)
     
+
     # Process endpoints
     logger.info("Processing endpoints")
     endpoints = user_input.split('\n')
@@ -670,15 +708,35 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
 
 
     try:
+        
+        production_info = callback.get_production_details()
+        if not production_info['production_name'] or not production_info['namespace']:
+            raise ValueError("Production name and namespace are required")
+        # Create a proper Task object for production details
+        production_task = Task(
+            description="Getting production details",
+            agent=crew.production_agent
+        )
+        
+        if not production_data.production_exists(production_info['production_name']):
+            production_data.add_production(
+                production_info['production_name'],
+                production_info['namespace']
+            )
+        production_info = callback.get_production_details()
         production_result = api_crew.kickoff()
         production_info = json.loads(extract_json_from_markdown(production_result))
         
         if not isinstance(production_info, dict):
             raise ValueError("Invalid production info format")
         
-        if production_info['create_new']:
-            logger.info(f"Creating new production: {production_info['production_name']}")
-            crew.production_data.add_production(
+
+        if not production_info['production_name'] or not production_info['namespace']:
+            raise ValueError("Production name and namespace are required")
+
+        # Add production to production data
+        if not production_data.production_exists(production_info['production_name']):
+            production_data.add_production(
                 production_info['production_name'],
                 production_info['namespace']
             )
@@ -778,7 +836,13 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
                 tasks=[crew.send_to_iris(review_result["approved_spec"], production_info, review_result)],
                 verbose=True
             )
-            iris_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
+            iris_payload = {
+                "production_name": production_info['production_name'],
+                "namespace": production_info['namespace'],
+                "openapi_spec": review_result["approved_spec"]
+            }
+            
+            iris_result = iris_service.send_to_iris(iris_payload)
         else:
             logger.warning("OpenAPI specification not approved for integration")
             iris_result = {
@@ -789,7 +853,11 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
             }
 
     except Exception as e:
-        callback.on_agent_error(crew.current_agent, str(e))
+        callback.on_agent_error(
+            agent=callback.current_agent if callback.current_agent else "Unknown",
+            task="Current task",
+            error=e
+        )
         logger.error(f"Error in process_api_integration: {str(e)}")
         raise
     finally:

@@ -38,13 +38,24 @@ if 'production_data' not in st.session_state:
     
 iris_service = IrisI14yService()
 
-st.subheader("Enter API Endpoints")
-st.write("Enter one endpoint per line. Example:")
-st.code("""
-    GET api.example.com/users to retrieve all users
-    POST api.example.com/users to create a new user
-""")
+st.markdown("""
+    This tool helps you convert natural language API descriptions into OpenAPI specifications 
+    and integrate them with your production environment. Simply:
+    
+    1. **Describe your APIs** naturally - just write what you want them to do
+    2. **Provide production details** - name and namespace for your deployment
+    3. **Let the AI agents** handle the conversion and integration
+    
+    The tool will:
+    - Extract API endpoints from your description
+    - Generate proper OpenAPI specifications
+    - Validate the endpoints and parameters
+    - Create interoperability with your InterSystems IRIS environment
+    """)
 
+st.subheader("Enter API Endpoints")
+st.write("Enter one endpoint per line with description. Example:")
+st.code("""I want to retrieve all users from api.example.com/users using GET method and also create a new user POST api.example.com/users""")
 
 # Initialize session state if needed
 if 'processing' not in st.session_state:

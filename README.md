@@ -23,10 +23,10 @@ Facilis processes user-provided API descriptions, extracting key details such as
 - **Validation**: Ensures API compliance and consistency.
 - **Transformation**: Converts structured API details into OpenAPI JSON.
 - **Review**: Verifies OpenAPI compliance before finalization.
-- **Export**: Converts and exports OpenAPI documentation to InterSystems IRIS.
+- **Integration**:  Connects with Facilis API on InterSystems IRIS. Handles deployment configurations, creating the production, Business Services, Business Operations, and everything else
 
 ## 📋 Prerequisites
-- Python 3.9+
+- Python 3.10+
 - Docker & Docker Compose
 - An API key from your preferred LLM provider (OpenAI, Azure OpenAI, Google Gemini, or Claude)
 
@@ -69,6 +69,27 @@ docker-compose up -d
 # Stop and remove containers
 docker-compose down --rmi all
 ```
+
+## 💡 How to Use
+
+### 1. Describe Your APIs
+Simply describe your API endpoints in natural language. For example:
+
+```
+I want to retrieve all users from api.example.com/users using GET method and also create a new user POST api.example.com/users
+```
+
+This will be automatically converted into proper API specifications for:
+
+- **GET /users** - Retrieve all users
+- **POST /users** - Create a new user
+
+### 2. Provide Production Details
+
+- Enter your production name
+- Specify the namespace
+
+Facilis will handle the rest!
 
 ## 🚧 Limitations
 - Accuracy of extracted API details depends on the quality of user input.
