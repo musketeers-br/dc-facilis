@@ -33,10 +33,11 @@ col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     st.image(str(image_path), width=215)  # Set exact width, height will maintain aspect ratio
 
+iris_service = IrisI14yService()
+
 if 'production_data' not in st.session_state:
     st.session_state.production_data = ProductionData()
     
-iris_service = IrisI14yService()
 
 st.markdown("""
     This tool helps you convert natural language API descriptions into OpenAPI specifications 

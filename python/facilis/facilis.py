@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('facilis')
 
-class StreamlitLoggingCallback:
+class StreamlitCallback:
     def __init__(self, container: Optional[Any] = None):
         self.container = container or st
         self.current_agent = None
@@ -71,40 +71,55 @@ class StreamlitLoggingCallback:
         """
         self.logger.info(f"Requesting user input for: {field}")
         
-        # Create a unique key for each input field
-        input_key = f"user_input_{field}_{datetime.now().timestamp()}"
+        # Create a stable key for the input field
+        input_key = f"input_{field.lower().replace(' ', '_')}"
         
         self.container.write(f"📝 Please provide the following information:")
         label = f"Enter {field}:" if not required else f"Enter {field} (required):"
         
-        while True:
-            if field_type == "text":
-                user_input = self.container.text_input(label, key=input_key)
-            elif field_type == "select" and options:
-                user_input = self.container.selectbox(label, options, key=input_key)
-            elif field_type == "json":
-                user_input = self.container.text_area(
-                    label,
-                    height=150,
-                    key=input_key,
-                    help="Enter a valid JSON object"
-                )
-            
-            if user_input or not required:
-                if user_input:
-                    self.user_inputs[field] = user_input
-                return user_input
-            else:
-                self.container.error(f"{field} is required. Please provide a value.")
-                # Sleep briefly to prevent too many rapid updates
+        user_input = None
+        
+        if field_type == "text":
+            user_input = self.container.text_input(label, key=input_key)
+        elif field_type == "select" and options:
+            user_input = self.container.selectbox(
+                label,
+                options,
+                key=input_key,
+                help=f"Select a {field} from the list"
+            )
+        elif field_type == "json":
+            user_input = self.container.text_area(
+                label,
+                height=150,
+                key=input_key,
+                help="Enter a valid JSON object"
+            )
+        
+        if user_input:
+            self.user_inputs[field] = user_input
+            return user_input
+        
+        if required:
+            self.container.error(f"{field} is required. Please provide a value.")
+            st.stop()  # Stop execution until input is provided
+        
+        return None
 
-    def get_production_details(self) -> Dict[str, str]:
+    def get_production_details(self) -> Optional[Dict[str, str]]:
         """
         Get required production details from user
         """
+        # Try to get production name
         production_name = self.request_user_input("production name", required=True)
+        if not production_name:
+            return None
+            
+        # Try to get namespace
         namespace = self.request_user_input("namespace", required=True)
-        
+        if not namespace:
+            return None
+
         return {
             "production_name": production_name,
             "namespace": namespace
@@ -221,11 +236,28 @@ class OpenAPITransformer:
 class IrisI14yService:
     def __init__(self):
         self.logger = logging.getLogger('facilis.IrisI14yService')
-        self.base_url = os.getenv("FACILIS_URL", "http://localhost:58316") 
+        self.base_url = os.getenv("FACILIS_URL", "http://dc-facilis-iris-1:52773") 
         self.headers = {
             "Content-Type": "application/json"
         }
         self.logger.info("IrisI14yService initialized")
+
+    def get_namespaces(self) -> List[str]:
+        """
+        Get available namespaces from Iris
+        """
+        self.logger.info("Fetching namespaces from Iris")
+        try:
+            response = requests.get(
+                f"{self.base_url}/facilis/api/namespaces",
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Failed to fetch namespaces: {str(e)}"
+            self.logger.error(error_msg)
+            return []
 
     def send_to_iris(self, payload: Dict) -> Dict:
         """
@@ -674,74 +706,55 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
     logger.info("Starting API integration process")
 
     # Create the callback
-    callback = StreamlitLoggingCallback(st_container)
-    
-    llm = get_facilis_llm()
-    if llm is None:
-        logger.error("Invalid AI_ENGINE selection")
-        raise ValueError("Invalid AI_ENGINE selection")
-
-    logger.info("Creating APISpecificationCrew")
-    crew = APISpecificationCrew(llm, production_data, iris_service, callback)
-    
-
-    # Process endpoints
-    logger.info("Processing endpoints")
-    endpoints = user_input.split('\n')
+    callback = StreamlitCallback(st_container)
     callback.on_crew_start()
     
-    # Get production details
-    logger.info("Getting production details")
-    api_crew = Crew(
-        agents=[
-            crew.production_agent,
-            crew.extraction_agent,
-            crew.validation_agent,
-            crew.interaction_agent,
-            crew.transformation_agent,
-            crew.reviewer_agent,
-            crew.iris_i14y_agent
-        ],
-        tasks=[crew.get_production_details()],
-        verbose=True
-    )
-
-
     try:
+        llm = get_facilis_llm()
+        if llm is None:
+            logger.error("Invalid AI_ENGINE selection")
+            raise ValueError("Invalid AI_ENGINE selection")
+
+        logger.info("Creating APISpecificationCrew")
+        crew = APISpecificationCrew(llm, production_data, iris_service, callback)
+
+        # Process endpoints
+        logger.info("Processing endpoints")
+        endpoints = user_input.split('\n')
         
-        production_info = callback.get_production_details()
-        if not production_info['production_name'] or not production_info['namespace']:
-            raise ValueError("Production name and namespace are required")
-        # Create a proper Task object for production details
-        production_task = Task(
-            description="Getting production details",
-            agent=crew.production_agent
+        logger.info("Getting production details")
+        api_crew = Crew(
+            agents=[
+                crew.production_agent,
+                crew.extraction_agent,
+                crew.validation_agent,
+                crew.interaction_agent,
+                crew.transformation_agent,
+                crew.reviewer_agent,
+                crew.iris_i14y_agent
+            ],
+            tasks=[crew.get_production_details()],
+            verbose=True
         )
-        
-        if not production_data.production_exists(production_info['production_name']):
-            production_data.add_production(
-                production_info['production_name'],
-                production_info['namespace']
-            )
-        production_info = callback.get_production_details()
+
         production_result = api_crew.kickoff()
         production_info = json.loads(extract_json_from_markdown(production_result))
-        
+
         if not isinstance(production_info, dict):
             raise ValueError("Invalid production info format")
-        
 
-        if not production_info['production_name'] or not production_info['namespace']:
-            raise ValueError("Production name and namespace are required")
+        if not production_info.get('production_name') or not production_info.get('namespace'):
+            logger.info("Waiting for production details...")
+            st.stop()
 
-        # Add production to production data
+        # Add production to production data if it doesn't exist
         if not production_data.production_exists(production_info['production_name']):
             production_data.add_production(
                 production_info['production_name'],
                 production_info['namespace']
-            )
+            ) 
+        production_info = callback.get_production_details()
 
-        # Extract API specs
         logger.info("Extracting API specifications")
         api_crew = Crew(
             agents=[crew.extraction_agent],
