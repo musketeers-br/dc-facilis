@@ -2,14 +2,20 @@ Class dc.facilis.core Extends %RegisteredObject
 {
 
 /// Execute
-ClassMethod Execute(json As %DynamicObject, Output response) As %Status
+ClassMethod Execute(json As %DynamicObject, Output response As %DynamicObject) As %Status
 {
-        Set sc = $$$OK
+    Set tSC = $$$OK
+	Try {
+        Set response = {}
         Set openapi = json.%Get("openapi_spec")
         Set production = json.%Get("production_name")
         Set:(production="") production = "facilisProduction"
-        Set response = ..GenerateI14y(production, openapi.%ToJSON())
-        Return sc
+        Set resp = ..GenerateI14y(production, openapi.%ToJSON())
+        Set:(resp'="") response = {}.%FromJSON(resp)
+	} Catch tException {
+		Set:$$$ISOK(tSC) tSC = tException.AsStatus()
+	}
+	Return tSC
 }
 
 /// Generate Interoperability
@@ -157,7 +163,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an expert in both OpenAPI specifications and InterSystems IRIS Interoperability. 
             Your job is to analyze OpenAPI documents and create a detailed plan for how they should be 
             implemented as IRIS Interoperability components.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=False,
             tools=[analyze_openapi_tool],
             llm=get_facilis_llm()
@@ -170,7 +176,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an experienced InterSystems IRIS developer specializing in Interoperability Productions.
             Your expertise is in creating Business Services that can receive and process incoming requests based on
             API specifications.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=True,
             tools=[generate_production_class_tool, generate_business_service_tool],
             llm=get_facilis_llm()
@@ -183,7 +189,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an experienced InterSystems IRIS developer specializing in Interoperability Productions.
             Your expertise is in creating Business Operations that can send requests to external systems
             based on API specifications.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=True,
             tools=[generate_business_operation_tool, generate_message_class_tool],
             llm=get_facilis_llm()
@@ -196,7 +202,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an InterSystems IRIS deployment specialist. Your job is to ensure 
             that generated IRIS class definitions are properly exported as valid .cls files that 
             can be directly imported into an IRIS environment.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=False,
             tools=[export_iris_classes_tool, validate_iris_classes_tool],
             llm=get_facilis_llm()
@@ -339,6 +345,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
 
             if isinstance(openapi_spec, str):
                 try:
+                    print(openai_spec)
                     openapi_spec = json.loads(openapi_spec)
                 except json.JSONDecodeError as e:
                     return {"error": f"Invalid JSON string provided: {str(e)}"}
@@ -728,7 +735,28 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
         tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task]
     )
 
-    result = crew.kickoff(inputs={"openapi_spec": openApiSpec})
+    response = {}
+    try:
+        result = crew.kickoff(inputs={"openapi_spec": openApiSpec})
+        response = {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        response = {
+            "status": "error",
+            "error": {
+                "code": "agent error",
+                "message": "Error during conversion agent process",
+                "description": str(e),
+                "details": {
+                    "type": type(e).__name__,
+                    "traceback": traceback.format_exc()
+                }
+            }
+        }
+
+    return json.dumps(response)
 }
 
 }
