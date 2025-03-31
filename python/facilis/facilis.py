@@ -454,12 +454,26 @@ class APISpecificationCrew:
                     name = self.callback.request_user_input("production name")
                     if name:
                         updated_fields[field] = name
-                
+
                 elif field == "namespace":
-                    namespace = self.callback.request_user_input("namespace")
-                    if namespace:
-                        updated_fields[field] = namespace
-                
+                    try:
+                        namespaces = self.iris_service.get_namespaces()
+                        if namespaces:
+                            namespace = self.callback.request_user_input(
+                                "namespace",
+                                field_type="select",
+                                options=namespaces,
+                                required=True
+                            )
+                            if namespace:
+                                updated_fields[field] = namespace
+                        else:
+                            namespace = self.callback.request_user_input("namespace")
+
+                    except Exception as e:
+                        self.callback.container.error(f"Failed to fetch namespaces: {str(e)}")
+                        st.stop()
+
                 else:
                     value = self.callback.request_user_input(field)
                     if value:

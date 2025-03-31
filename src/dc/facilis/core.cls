@@ -2,15 +2,18 @@ Class dc.facilis.core Extends %RegisteredObject
 {
 
 /// Execute
-ClassMethod Execute(openapi As %String, Output response) As %Status
+ClassMethod Execute(json As %DynamicObject, Output response) As %Status
 {
         Set sc = $$$OK
-        Set response = ..GenerateI14y(openapi)
+        Set openapi = json.%Get("openapi_spec")
+        Set production = json.%Get("production_name")
+        Set:(production="") production = "facilisProduction"
+        Set response = ..GenerateI14y(production, openapi.%ToJSON())
         Return sc
 }
 
 /// Generate Interoperability
-ClassMethod GenerateI14y(openApiSpec As %String) As %String [ Language = python ]
+ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %String [ Language = python ]
 {
     import os
     import json
@@ -722,12 +725,10 @@ ClassMethod GenerateI14y(openApiSpec As %String) As %String [ Language = python 
     # Create the crew
     crew = Crew(
         agents=[analyzer, bs_generator, bo_generator, exporter],
-        tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task],
-        verbose=True
+        tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task]
     )
 
     result = crew.kickoff(inputs={"openapi_spec": openApiSpec})
-    print("\nConversion process completed!")
 }
 
 }

@@ -12,9 +12,9 @@ Parameter CHARSET = "utf-8";
 XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 {
 <Routes>
-    <Route Url="namespaces" Method="get" Call="NamespacesList" />
+    <Route Url="/namespaces" Method="get" Call="NamespacesList" />
     <!-- Generate Interoperability from OpenAPI -->
-    <Route Url="generate" Method="post" Call="Generate" />
+    <Route Url="/generate" Method="post" Call="Generate" />
 </Routes>
 }
 
@@ -46,10 +46,11 @@ ClassMethod Generate() As %Status
         Do ##class(%REST.Impl).%SetContentType("application/json")
         If '##class(%REST.Impl).%CheckAccepts("application/json") Do ##class(dc.facilis.rest.Impl).%ReportRESTError(..#HTTP406NOTACCEPTABLE,$$$ERROR($$$RESTBadAccepts)) Quit
         If '$isobject(%request.Content) || (%request.Content.Size=0) Do ##class(dc.facilis.rest.Impl).%ReportRESTError(..#HTTP400BADREQUEST,$$$ERROR($$$RESTRequired,"input")) Quit
-        Set pinput=##class(%DynamicAbstractObject).%FromJSON(%request.Content)
 
+        Set pinput=##class(%DynamicAbstractObject).%FromJSON(%request.Content)
         $$$ThrowOnError(##class(dc.facilis.core).Execute(pinput, .response))
-        Do ##class(dc.facilis.rest.Impl).%WriteResponse(response)
+
+        ; Do ##class(dc.facilis.rest.Impl).%WriteResponse(response)
     } Catch (ex) {
         Do ##class(dc.facilis.rest.Impl).%ReportRESTError(..#HTTP500INTERNALSERVERERROR,ex.AsStatus(),$parameter("dc.facilis.rest.Impl","ExposeServerExceptions"))
     }
