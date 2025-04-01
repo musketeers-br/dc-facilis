@@ -983,12 +983,6 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
         tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task]
     )
 
-
-    crew = Crew(
-        agents=[analyzer, bs_generator, bo_generator, exporter],
-        tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task],
-        )
-
     # -=--=--=--=--=--=--=--=--=--=--=--=--=--=--=-
 
     response = {}
