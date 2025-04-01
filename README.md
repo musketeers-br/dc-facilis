@@ -38,7 +38,9 @@ cd dc-facilis
 ```
 
 ### 2️⃣ Set Up Environment Variables
-Facilis requires **two** `.env` files, one in the root directory and another in `python/facilis/`.
+Facilis requires two `.env` files with the same variables:
+- One in the root directory
+- One inside `python/facilis/`
 
 #### Create `.env` files based on the provided samples
 ```bash
@@ -57,6 +59,9 @@ LLM_MODEL_NAME=gpt-4o-mini
 # API Key for the selected AI provider
 OPENAI_API_KEY=your-api-key-here
 ```
+
+#### Why Two `.env` Files?
+Facilis organizes its AI agents into two groups: **Planners** and **Generators**. You can assign different LLM models to each group. For example, you may want to use **Claude Sonnet** for planning and **GPT-4o** for generating. This setup allows greater flexibility in balancing speed, accuracy, and cost.
 
 ### 3️⃣ Run with Docker Compose
 ```bash
@@ -95,6 +100,10 @@ Facilis will handle the rest!
 - Accuracy of extracted API details depends on the quality of user input.
 - LLM-based processing may introduce minor inconsistencies requiring manual review.
 - Currently optimized for OpenAPI 3.0.
+- Facilis has 16 AI agents and a complex processing pipeline. Due to this complexity, the entire process may take a considerable amount of time to execute.
+
+- **Disclaimer**: Unfortunately, the app could hallucinate, as it depends on user input and the LLM model used. In our tests, GPT-4o and Claude Sonnet provided the best results, but they also hallucinate occasionally. In some cases, we needed to run the same prompt multiple times to achieve a satisfactory result. We are continuously working to improve accuracy and reliability.
+
 
 ## 🎖️ Credits
 Facilis is developed with ❤️ by the Musketeers Team
