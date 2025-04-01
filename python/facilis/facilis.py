@@ -55,15 +55,63 @@ class StreamlitCallback:
         self.logger.info(message)
         self.container.success(message)
 
+    def on_timeout_error(self, retry_count: int, max_retries: int):
+        """New method to notify user about timeout and retries"""
+        if retry_count < max_retries:
+            message = f"""⏳ Request timeout occurred (attempt {retry_count}/{max_retries})
+            The server is taking longer than expected to respond.
+            Automatically retrying in a moment..."""
+            self.logger.warning(message)
+            self.container.warning(message)
+        else:
+            message = """🔄 The server is currently experiencing high latency.
+            
+            Suggestions:
+            1. Wait a few moments and try again
+            2. Check your network connection
+            3. Verify the server status
+            4. If the problem persists, contact support
+            
+            Click the 'Generate' button to try again."""
+            self.logger.error(message)
+            self.container.error(message)
+
     def on_agent_error(self, agent: Any, task: Any, error: Exception):
-        # Handle cases where agent might be a string or Agent object
         agent_role = agent.role if hasattr(agent, 'role') else str(agent)
-        # Handle cases where task might be a string or Task object
         task_description = task.description if hasattr(task, 'description') else str(task)
+        
+        # Check if it's a timeout error
+        if isinstance(error, IrisIntegrationError) and "timeout" in str(error).lower():
+            self.on_timeout_error(3, 3)  # Assuming max retries is 3
+            return
+            
+        # Handle other IRIS-related tasks
+        if 'iris' in str(task_description).lower():
+            self.on_iris_generation_complete(False, str(error))
         
         message = f"❌ Error in agent '{agent_role}' during task: {task_description[:100]}\nError: {str(error)}"
         self.logger.error(message)
         self.container.error(message)
+
+    def on_iris_generation_start(self):
+        """New method to notify when IRIS generation begins"""
+        message = """🔄 Generating InterSystems IRIS interoperability components:
+        - Creating Business Service
+        - Setting up Business Process
+        - Configuring Business Operation
+        - Establishing Message Routes"""
+        self.logger.info("Starting IRIS interoperability generation")
+        self.container.info(message)
+
+    def on_iris_generation_complete(self, status: bool, details: str = None):
+        """New method to notify when IRIS generation completes"""
+        if status:
+            message = "✅ Successfully generated InterSystems IRIS interoperability components!"
+            self.container.success(message)
+        else:
+            message = f"❌ Failed to generate InterSystems IRIS components: {details or 'Unknown error'}"
+            self.container.error(message)
+        self.logger.info(message)
 
     def request_user_input(self, field: str, field_type: str = "text", options: List = None, required: bool = False) -> Any:
         """
@@ -154,10 +202,6 @@ class StreamlitCallback:
             except json.JSONDecodeError:
                 self.container.error("Invalid JSON format. Please try again.")
 
-class IrisIntegrationError(Exception):
-    """Custom exception for Iris integration errors"""
-    pass
-
 class ProductionData:
     def __init__(self):
         self.logger = logging.getLogger('facilis.ProductionData')
@@ -233,6 +277,12 @@ class OpenAPITransformer:
 
         return path_item
 
+class IrisIntegrationError(Exception):
+    """Custom exception for Iris integration errors"""
+    def __init__(self, message: str, original_error: Exception = None):
+        super().__init__(message)
+        self.original_error = original_error
+
 class IrisI14yService:
     def __init__(self):
         self.logger = logging.getLogger('facilis.IrisI14yService')
@@ -240,6 +290,8 @@ class IrisI14yService:
         self.headers = {
             "Content-Type": "application/json"
         }
+        self.timeout = int(os.getenv("IRIS_TIMEOUT", "504")) 
+        self.max_retries = int(os.getenv("IRIS_MAX_RETRIES", "3")) 
         self.logger.info("IrisI14yService initialized")
 
     def get_namespaces(self) -> List[str]:
@@ -261,27 +313,52 @@ class IrisI14yService:
 
     def send_to_iris(self, payload: Dict) -> Dict:
         """
-        Send payload to Iris generate endpoint
-        
-        Args:
-            payload: Dictionary containing:
-                - production_name: str
-                - namespace: str
-                - openapi_spec: Dict
+        Send payload to Iris generate endpoint with timeout handling and retry logic
         """
         self.logger.info("Sending payload to Iris generate endpoint")
-        try:
-            response = requests.post(
-                f"{self.base_url}/facilis/api/generate",
-                json=payload,
-                headers=self.headers
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            error_msg = f"Failed to send to Iris: {str(e)}"
-            self.logger.error(error_msg)
-            raise IrisIntegrationError(error_msg)
+        if isinstance(payload, str):
+            try:
+                json.loads(payload)  
+            except json.JSONDecodeError:
+                raise ValueError("Invalid JSON string provided")
+        
+        retry_count = 0
+        last_error = None
+
+        while retry_count < self.max_retries:
+            try:
+                # Add more detailed logging
+                self.logger.info(f"Attempt {retry_count + 1}/{self.max_retries}: Sending request to {self.base_url}/facilis/api/generate")
+                
+                response = requests.post(
+                    f"{self.base_url}/facilis/api/generate",
+                    json=payload,
+                    headers=self.headers,
+                    timeout=self.timeout / 1000  # Convert ms to seconds
+                )
+                response.raise_for_status()
+                return response.json()
+
+            except requests.exceptions.Timeout as e:
+                retry_count += 1
+                last_error = e
+                error_msg = f"Timeout occurred (attempt {retry_count}/{self.max_retries})"
+                self.logger.warning(error_msg)
+                
+                if retry_count < self.max_retries:
+                    # Exponential backoff: 1s, 2s, 4s...
+                    wait_time = 2 ** (retry_count - 1)
+                    self.logger.info(f"Waiting {wait_time} seconds before retry...")
+                continue
+
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Failed to send to Iris: {str(e)}"
+                self.logger.error(error_msg)
+                raise IrisIntegrationError(error_msg)
+
+        error_msg = f"Failed to send to Iris after {self.max_retries} attempts due to timeout"
+        self.logger.error(error_msg)
+        raise IrisIntegrationError(error_msg, last_error)
 
 class APIAgents:
     def __init__(self, llm, iris_service: IrisI14yService):

@@ -2,16 +2,15 @@ Class dc.facilis.core Extends %RegisteredObject
 {
 
 /// Execute
-ClassMethod Execute(json As %DynamicObject, Output response As %DynamicObject) As %Status
+ClassMethod Execute(json As %DynamicObject, Output response As %String) As %Status
 {
     Set tSC = $$$OK
 	Try {
-        Set response = {}
+        Set response = ""
         Set openapi = json.%Get("openapi_spec")
         Set production = json.%Get("production_name")
         Set:(production="") production = "facilisProduction"
-        Set resp = ..GenerateI14y(production, openapi.%ToJSON())
-        Set:(resp'="") response = {}.%FromJSON(resp)
+        Set response = ..GenerateI14y(production, openapi.%ToJSON())
 	} Catch tException {
 		Set:$$$ISOK(tSC) tSC = tException.AsStatus()
 	}
@@ -114,6 +113,44 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
                 return writer.write_production_class(production_name, components_list)
             except json.JSONDecodeError:
                 return "Error: Invalid JSON format for components"
+
+    class CollectGeneratedFilesToolInput(BaseModel):
+        directory: str = Field(
+            description="Directory containing the generated .cls files"
+        )
+
+    class CollectGeneratedFilesTool(BaseTool):
+        name: str = "collect_generated_files"
+        description: str = "Collects all generated .cls files and returns them as a JSON collection"
+        input_schema: Type[BaseModel] = CollectGeneratedFilesToolInput
+
+        def _run(self, directory: str) -> str:
+            """
+            Collects all generated .cls files and returns them as a JSON collection
+            
+            Args:
+                directory (str): Directory containing the generated files
+                
+            Returns:
+                str: JSON string containing file contents
+            """
+            try:
+                files_collection = {}
+                for root, _, files in os.walk(directory):
+                    for file in files:
+                        if file.endswith('.cls'):
+                            file_path = os.path.join(root, file)
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                files_collection[file] = {
+                                    'path': os.path.relpath(file_path, directory),
+                                    'content': f.read()
+                                }
+                return json.dumps(files_collection, indent=2)
+            except Exception as e:
+                return json.dumps({
+                    "status": "error",
+                    "error": str(e)
+                })
 
     class GenerateProductionClassToolInput(BaseModel):
         production_name: str = Field(description="Name of the production")
@@ -299,6 +336,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     generate_message_class_tool = GenerateMessageClassTool()
     export_iris_classes_tool = ExportIRISClassesTool()
     validate_iris_classes_tool = ValidateIRISClassesTool()
+    collect_generated_files_tool = CollectGeneratedFilesTool()
 
     def create_analyzer_agent():
         return Agent(
@@ -307,7 +345,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an expert in both OpenAPI specifications and InterSystems IRIS Interoperability. 
             Your job is to analyze OpenAPI documents and create a detailed plan for how they should be 
             implemented as IRIS Interoperability components.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=False,
             tools=[analyze_openapi_tool],
             llm=get_facilis_llm()
@@ -320,7 +358,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an experienced InterSystems IRIS developer specializing in Interoperability Productions.
             Your expertise is in creating Business Services that can receive and process incoming requests based on
             API specifications.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=True,
             tools=[generate_production_class_tool, generate_business_service_tool],
             llm=get_facilis_llm()
@@ -333,7 +371,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an experienced InterSystems IRIS developer specializing in Interoperability Productions.
             Your expertise is in creating Business Operations that can send requests to external systems
             based on API specifications.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=True,
             tools=[generate_business_operation_tool, generate_message_class_tool],
             llm=get_facilis_llm()
@@ -346,9 +384,21 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             backstory="""You are an InterSystems IRIS deployment specialist. Your job is to ensure 
             that generated IRIS class definitions are properly exported as valid .cls files that 
             can be directly imported into an IRIS environment.""",
-            verbose=True,
+            verbose=False,
             allow_delegation=False,
             tools=[export_iris_classes_tool, validate_iris_classes_tool],
+            llm=get_facilis_llm()
+        )
+        
+    def create_collector_agent():
+        return Agent(
+            role="IRIS Class Collector",
+            goal="Collect all generated IRIS class files into a JSON collection",
+            backstory="""You are a file system specialist responsible for gathering and 
+            organizing generated IRIS class files into a structured collection.""",
+            verbose=False,
+            allow_delegation=False,
+            tools=[CollectGeneratedFilesTool()],
             llm=get_facilis_llm()
         )
 
@@ -470,8 +520,8 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
         results = writer.validate_classes()
         return json.dumps(results, indent=2)
 
-
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
     class OpenAPIParser:
         """Tool for parsing and analyzing OpenAPI v3 specifications"""
 
@@ -552,7 +602,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
                 cls._instance = super().__new__(cls)
             return cls._instance
 
-        def __init__(self, output_dir="./output"):
+        def __init__(self, output_dir="/home/irisowner/dev/output"):
             if not IRISClassWriter._initialized:
                 self.output_dir = os.path.abspath(output_dir)
                 self.generated_classes = {}
@@ -925,13 +975,14 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     # -=--=--=--=--=--=--=--=--=--=--=--=--=--=--=-
     # Initialize tools
     openapi_parser = OpenAPIParser()
-    iris_class_writer = IRISClassWriter(output_dir="./output/iris_classes")
+    iris_class_writer = IRISClassWriter(output_dir="/home/irisowner/dev/output/iris_classes")
 
     # Create the agents
     analyzer = create_analyzer_agent()
     bs_generator = create_bs_generator_agent()
     bo_generator = create_bo_generator_agent()
     exporter = create_exporter_agent()
+    collector = create_collector_agent()
 
     # Create tasks
     analysis_task = Task(
@@ -963,7 +1014,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
         expected_output="Valid IRIS .cls files saved to output directory",
         context=[bs_generation_task, bo_generation_task],
         input={
-            "output_dir": "./output/iris_classes"  # Optional
+            "output_dir": "/home/irisowner/dev/output/iris_classes"  # Optional
         }
     )
 
@@ -977,10 +1028,20 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
         }
     )
 
-    # Create the crew
+    collection_task = Task(
+        description="Collect all generated IRIS class files into a JSON collection",
+        agent=collector,
+        expected_output="JSON collection of all generated .cls files",
+        context=[export_task, validate_task],
+        input={
+            "directory": "./output/iris_classes"
+        }
+    )
+
+    # Create the crew with the new agent and task
     crew = Crew(
-        agents=[analyzer, bs_generator, bo_generator, exporter],
-        tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task]
+        agents=[analyzer, bs_generator, bo_generator, exporter, collector],
+        tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task, validate_task, collection_task]
     )
 
     # -=--=--=--=--=--=--=--=--=--=--=--=--=--=--=-

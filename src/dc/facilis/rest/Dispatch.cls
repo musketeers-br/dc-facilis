@@ -50,7 +50,7 @@ ClassMethod Generate() As %Status
         Set pinput=##class(%DynamicAbstractObject).%FromJSON(%request.Content)
         $$$ThrowOnError(##class(dc.facilis.core).Execute(pinput, .response))
 
-        ; Do ##class(dc.facilis.rest.Impl).%WriteResponse(response)
+        Do ##class(dc.facilis.rest.Impl).%WriteResponse(response)
     } Catch (ex) {
         Do ##class(dc.facilis.rest.Impl).%ReportRESTError(..#HTTP500INTERNALSERVERERROR,ex.AsStatus(),$parameter("dc.facilis.rest.Impl","ExposeServerExceptions"))
     }
