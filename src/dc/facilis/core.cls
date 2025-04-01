@@ -670,7 +670,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             Returns:
                 str: The generated class content
             """
-            class_name = self._sanitize_class_name(f"bs_{service_name}")
+            class_name = self._sanitize_class_name(f"bs{service_name}")
             
             class_content = f"""Class {class_name} Extends Ens.BusinessService
             {{
@@ -682,10 +682,10 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
                 Set tSC = $$$OK
                 Try {{
                     // Process input and create a request message
-                    Set tRequest = ##class(ms_{service_name}).%New()
+                    Set tRequest = ##class(ms{service_name}).%New()
                     
                     // Forward to appropriate business process or operation
-                    Set tSC = ..SendRequestSync("to_{service_name}", tRequest, .tResponse)
+                    Set tSC = ..SendRequestSync("to{service_name}", tRequest, .tResponse)
                     
                     // Handle response
                     If $IsObject(tResponse) {{
@@ -716,7 +716,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             Returns:
                 str: The generated class content
             """
-            class_name = self._sanitize_class_name(f"bo_{operation_name}")
+            class_name = self._sanitize_class_name(f"bo{operation_name}")
             
             method = endpoint_info.get("method", "GET")
             path = endpoint_info.get("path", "/")
@@ -730,7 +730,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
 
             Parameter INVOCATION = "Queue";
 
-            Method {operation_name}(pRequest As ms_{operation_name}, Output pResponse As Ens.Response) As %Status
+            Method {operation_name}(pRequest As ms{operation_name}, Output pResponse As Ens.Response) As %Status
             {{
                 Set tSC = $$$OK
                 Try {{
@@ -765,7 +765,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             XData MessageMap
             {{
             <MapItems>
-            <MapItem MessageType="ms_{operation_name}">
+            <MapItem MessageType="ms{operation_name}">
                 <Method>{operation_name}</Method>
             </MapItem>
             </MapItems>
@@ -788,7 +788,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             Returns:
                 str: The generated class content
             """
-            class_name = self._sanitize_class_name(f"ms_{message_name}")
+            class_name = self._sanitize_class_name(f"ms{message_name}")
             
             class_content = f"""Class {class_name} Extends Ens.Request
             {{
