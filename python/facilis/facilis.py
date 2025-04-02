@@ -6,6 +6,9 @@ import json
 import requests
 import time
 import logging
+import aiohttp
+import asyncio
+
 from crewai import Agent, Task, Crew
 from textwrap import dedent
 from typing import List, Dict, Any, Optional
@@ -66,16 +69,40 @@ class StreamlitCallback:
             self.container.warning(message)
         else:
             message = """🔄 The server is currently experiencing high latency.
-            
-            Suggestions:
-            1. Wait a few moments and try again
-            2. Check your network connection
-            3. Verify the server status
-            4. If the problem persists, contact support
-            
-            Click the 'Generate' button to try again."""
-            self.logger.error(message)
+            """
+
+    async def on_iris_generation_start_async(self):
+        """Async version of on_iris_generation_start"""
+        message = """🔄 Generating InterSystems IRIS interoperability components:
+        - Creating Business Service
+        - Setting up Business Process
+        - Configuring Business Operation
+        - Establishing Message Routes"""
+        self.logger.info("Starting IRIS interoperability generation")
+        self.container.info(message)
+
+    async def on_iris_generation_complete_async(self, status: bool, details: str = None):
+        """Async version of on_iris_generation_complete"""
+        if status:
+            message = "✅ Successfully generated InterSystems IRIS interoperability components!"
+            self.container.success(message)
+        else:
+            message = f"❌ Failed to generate InterSystems IRIS components: {details or 'Unknown error'}"
             self.container.error(message)
+        self.logger.info(message)
+
+    async def on_timeout_error_async(self, retry_count: int, max_retries: int):
+        """Async version of on_timeout_error"""
+        if retry_count < max_retries:
+            message = f"""⏳ Request timeout occurred (attempt {retry_count}/{max_retries})
+            The server is taking longer than expected to respond.
+            Automatically retrying in a moment..."""
+            self.logger.warning(message)
+            self.container.warning(message)
+        else:
+            message = """🔄 The server is currently experiencing high latency.
+            Please try again in a few moments."""
+            self.logger.error(message)
 
     def on_agent_error(self, agent: Any, task: Any, error: Exception):
         agent_role = agent.role if hasattr(agent, 'role') else str(agent)
@@ -291,30 +318,13 @@ class IrisI14yService:
         self.headers = {
             "Content-Type": "application/json"
         }
-        self.timeout = int(os.getenv("IRIS_TIMEOUT", "504")) 
-        self.max_retries = int(os.getenv("IRIS_MAX_RETRIES", "3")) 
+        self.timeout = int(os.getenv("IRIS_TIMEOUT", "504"))  # in milliseconds
+        self.max_retries = int(os.getenv("IRIS_MAX_RETRIES", "3"))
         self.logger.info("IrisI14yService initialized")
 
-    def get_namespaces(self) -> List[str]:
+    async def send_to_iris_async(self, payload: Dict) -> Dict:
         """
-        Get available namespaces from Iris
-        """
-        self.logger.info("Fetching namespaces from Iris")
-        try:
-            response = requests.get(
-                f"{self.base_url}/facilis/api/namespaces",
-                headers=self.headers
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            error_msg = f"Failed to fetch namespaces: {str(e)}"
-            self.logger.error(error_msg)
-            return []
-
-    def send_to_iris(self, payload: Dict) -> Dict:
-        """
-        Send payload to Iris generate endpoint with timeout handling and retry logic
+        Send payload to Iris generate endpoint asynchronously
         """
         self.logger.info("Sending payload to Iris generate endpoint")
         if isinstance(payload, str):
@@ -326,34 +336,36 @@ class IrisI14yService:
         retry_count = 0
         last_error = None
 
+        # Create timeout for aiohttp
+        timeout = aiohttp.ClientTimeout(total=self.timeout / 1000)  # Convert ms to seconds
+
         while retry_count < self.max_retries:
             try:
-                # Add more detailed logging
                 self.logger.info(f"Attempt {retry_count + 1}/{self.max_retries}: Sending request to {self.base_url}/facilis/api/generate")
                 
-                response = requests.post(
-                    f"{self.base_url}/facilis/api/generate",
-                    json=payload,
-                    headers=self.headers,
-                    timeout=self.timeout / 1000  # Convert ms to seconds
-                )
-                response.raise_for_status()
-                return response.json()
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(
+                        f"{self.base_url}/facilis/api/generate",
+                        json=payload,
+                        headers=self.headers
+                    ) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        response.raise_for_status()
 
-            except requests.exceptions.Timeout as e:
+            except asyncio.TimeoutError as e:
                 retry_count += 1
                 last_error = e
                 error_msg = f"Timeout occurred (attempt {retry_count}/{self.max_retries})"
                 self.logger.warning(error_msg)
                 
                 if retry_count < self.max_retries:
-                    # Exponential backoff: 1s, 2s, 4s...
                     wait_time = 2 ** (retry_count - 1)
                     self.logger.info(f"Waiting {wait_time} seconds before retry...")
-                    time.sleep(wait_time)
+                    await asyncio.sleep(wait_time)
                 continue
 
-            except requests.exceptions.RequestException as e:
+            except aiohttp.ClientError as e:
                 error_msg = f"Failed to send to Iris: {str(e)}"
                 self.logger.error(error_msg)
                 raise IrisIntegrationError(error_msg)
@@ -361,6 +373,41 @@ class IrisI14yService:
         error_msg = f"Failed to send to Iris after {self.max_retries} attempts due to timeout"
         self.logger.error(error_msg)
         raise IrisIntegrationError(error_msg, last_error)
+
+    # Keep the synchronous method for backward compatibility
+    def send_to_iris(self, payload: Dict) -> Dict:
+        """
+        Synchronous wrapper for send_to_iris_async
+        """
+        return asyncio.run(self.send_to_iris_async(payload))
+
+    async def get_namespaces_async(self) -> List[str]:
+        """
+        Get available namespaces from Iris asynchronously
+        """
+        self.logger.info("Fetching namespaces from Iris")
+        try:
+            timeout = aiohttp.ClientTimeout(total=self.timeout / 1000)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(
+                    f"{self.base_url}/facilis/api/namespaces",
+                    headers=self.headers
+                ) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    response.raise_for_status()
+        except Exception as e:
+            error_msg = f"Failed to fetch namespaces: {str(e)}"
+            self.logger.error(error_msg)
+            return []
+
+    # Keep the synchronous method for backward compatibility
+    def get_namespaces(self) -> List[str]:
+        """
+        Synchronous wrapper for get_namespaces_async
+        """
+        return asyncio.run(self.get_namespaces_async())
+
 
 class APIAgents:
     def __init__(self, llm, iris_service: IrisI14yService):
@@ -794,12 +841,10 @@ def extract_json_from_markdown(markdown_text: str) -> str:
         # Return a simple JSON object with the original text
         return json.dumps({"error": "Failed to parse response", "raw_response": text})
 
-
-def process_api_integration(user_input: str, production_data: ProductionData, iris_service: IrisI14yService, st_container=None) -> Dict:
+async def process_api_integration(user_input: str, production_data: ProductionData, iris_service: IrisI14yService, st_container=None) -> Dict:
     logger = logging.getLogger('facilis.process_api_integration')
     logger.info("Starting API integration process")
 
-    # Create the callback
     callback = StreamlitCallback(st_container)
     callback.on_crew_start()
     
@@ -935,24 +980,26 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
         review_result.setdefault("approved_spec", openapi_result)
         review_result.setdefault("issues", [])
         review_result.setdefault("recommendations", [])
-
         if review_result["is_valid"]:
             logger.info("OpenAPI specification approved, sending to Iris")
-            api_crew = Crew(
-                agents=[crew.iris_i14y_agent],
-                tasks=[crew.send_to_iris(review_result["approved_spec"], production_info, review_result)],
-                verbose=True
-            )
+            await callback.on_iris_generation_start_async()
+            
             iris_payload = {
                 "production_name": production_info['production_name'],
                 "namespace": production_info['namespace'],
                 "openapi_spec": review_result["approved_spec"]
             }
             
-            iris_result = iris_service.send_to_iris(iris_payload)
+            try:
+                iris_result = await iris_service.send_to_iris_async(iris_payload)
+                await callback.on_iris_generation_complete_async(True)
+                return iris_result
+            except IrisIntegrationError as e:
+                await callback.on_iris_generation_complete_async(False, str(e))
+                raise
         else:
             logger.warning("OpenAPI specification not approved for integration")
-            iris_result = {
+            return {
                 "success": False,
                 "message": "OpenAPI specification not approved for integration",
                 "timestamp": datetime.now().isoformat(),
@@ -967,15 +1014,3 @@ def process_api_integration(user_input: str, production_data: ProductionData, ir
         )
         logger.error(f"Error in process_api_integration: {str(e)}")
         raise
-    finally:
-        callback.on_crew_end()
-
-    logger.info("API integration process completed")
-    return {
-        'production_name': production_info['production_name'],
-        'namespace': production_info['namespace'],
-        'endpoints': final_endpoints,
-        'openapi_documentation': review_result['approved_spec'],
-        'review_details': review_result,
-        'iris_integration': iris_result
-    }

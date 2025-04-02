@@ -7,3 +7,4 @@ python/__pycache__/
 __pycache__/
 /pycache/*
 /python/facilis/logs/
+/output/*

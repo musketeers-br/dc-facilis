@@ -1,4 +1,4 @@
-Class dc.facilis.core Extends %RegisteredObject
+Class dc.facilis.Core Extends %RegisteredObject
 {
 
 /// Execute
@@ -7,14 +7,17 @@ ClassMethod Execute(json As %DynamicObject, Output response As %String) As %Stat
     Set tSC = $$$OK
 	Try {
         Set response = ""
+        Do ##class(dc.facilis.Log).Info("dc.facilis.Core:Execute","Starting Process")
         Set openapi = json.%Get("openapi_spec")
         Set production = json.%Get("production_name")
         Set:(production="") production = "facilisProduction"
+        Do ##class(dc.facilis.Log).Info("dc.facilis.Core:Execute","Production Name: "_production)
         Set response = ..GenerateI14y(production, openapi.%ToJSON())
         Do ..I14yImporter(.impErr)
         Set:(impErr'="") response.import = impErr
 	} Catch tException {
 		Set:$$$ISOK(tSC) tSC = tException.AsStatus()
+        Do ##class(dc.facilis.Log).Error("dc.facilis.Core:Execute", $System.Status.GetErrorText(tSC))
 	}
 	Return tSC
 }
@@ -26,6 +29,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     import os
     import json
     import re
+    import iris
     from dotenv import load_dotenv
     from crewai import Crew, Agent, Task
     from crewai.tools import BaseTool
@@ -34,6 +38,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
 
     load_dotenv()
 
+    iris.cls("dc.facilis.Log").Info(f"{__name__}:main", "GenerateI14y")
     def get_facilis_llm():
         """Returns the appropriate chat model based on AI_ENGINE selection."""
         
@@ -427,6 +432,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             spec_dict = openapi_spec
         
         result = parser.analyze(spec_dict)
+        iris.cls("dc.facilis.Log").Info(f"{__name__}:analyse_openapi", result)
         return json.dumps(result, indent=2)
 
     def generate_production_class(production_name: str, components: str) -> str:
@@ -654,6 +660,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
                     "issues": issues
                 }
             
+            iris.cls("dc.facilis.Log").Info(f"{__name__}:IRISClassWriter", "validateclasses")
             return validation_results
 
         def _ensure_output_directory(self):
@@ -710,6 +717,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             """
             
             self.generated_classes[class_name] = class_content
+            iris.cls("dc.facilis.Log").Info(f"{__name__}:IRISClassWriter", "write_production_class")
             return class_content
         
         def write_business_operation(self, operation_name, endpoint_info):
@@ -782,6 +790,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             """
             
             self.generated_classes[class_name] = class_content
+            iris.cls("dc.facilis.Log").Info(f"{__name__}:IRISClassWriter", "write_business_operation")
             return class_content
         
         def write_message_class(self, message_name, schema_info):
@@ -811,6 +820,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             class_content += "}\n"
             
             self.generated_classes[class_name] = class_content
+            iris.cls("dc.facilis.Log").Info(f"{__name__}:IRISClassWriter", "write_message_class")
             return class_content
         
         def export_classes(self):
@@ -848,6 +858,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
                         "path": file_path
                     }
             
+            iris.cls("dc.facilis.Log").Info(f"{__name__}:IRISClassWriter", "export_classes")
             return results
         
         def validate_classes(self):
@@ -876,6 +887,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
                     "issues": issues
                 }
             
+            iris.cls("dc.facilis.Log").Info(f"{__name__}:IRISClassWriter", "validate_classes")
             return validation_results
 
         def _sanitize_class_name(self, name):
@@ -935,6 +947,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     iris_class_writer = IRISClassWriter(output_dir="/home/irisowner/dev/output/iris_classes")
 
     # Create the agents
+    iris.cls("dc.facilis.Log").Info(f"{__name__}", "Create the agents")
     analyzer = create_analyzer_agent()
     bs_generator = create_bs_generator_agent()
     bo_generator = create_bo_generator_agent()
@@ -942,6 +955,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     collector = create_collector_agent()
 
     # Create tasks
+    iris.cls("dc.facilis.Log").Info(f"{__name__}", "Create tasks")
  
     analysis_task = Task(
         description="""Analyze the OpenAPI specification and plan the necessary IRIS Interoperability components. 
@@ -1016,6 +1030,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     )
 
     # Create the crew with the new agent and task
+    iris.cls("dc.facilis.Log").Info(f"{__name__}", "Create the crew with the new agent and tasks")
     crew = Crew(
         agents=[analyzer, bs_generator, bo_generator, exporter, collector],
         tasks=[
@@ -1033,6 +1048,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
 
     response = {}
     try:
+        iris.cls("dc.facilis.Log").Info(f"{__name__}", "KickOff")
         result = crew.kickoff(inputs={"openapi_spec": openApiSpec, "production_name": "FacilisProduction"})
         response = {
             "status": "success",
@@ -1062,6 +1078,7 @@ ClassMethod I14yImporter(Output erros) As %Status
         Do $System.OBJ.ImportDir("/home/irisowner/dev/output/iris_classes","*.xml;*.cls","ck",.errors,1)
 	} Catch tException {
 		Set:$$$ISOK(tSC) tSC = tException.AsStatus()
+        Do ##class(dc.facilis.Log).Error("dc.facilis.Core:I14yImporter", $System.Status.GetErrorText(tSC))
 	}
 	Return tSC
 }

@@ -24,6 +24,7 @@ ClassMethod NamespacesList() As %Status
         Do ##class(%REST.Impl).%SetContentType("application/json")
         Set response = []
 
+        Do ##class(dc.facilis.Log).Info("dc.facilis.Dispatch:NamespacesList","On Namespace Endpoint")
         Do ##class(%SYS.Namespace).ListAll(.result)
         Set ns = ""
         While ($Order(result(ns))'="") {
@@ -47,12 +48,15 @@ ClassMethod Generate() As %Status
         If '##class(%REST.Impl).%CheckAccepts("application/json") Do ##class(dc.facilis.rest.Impl).%ReportRESTError(..#HTTP406NOTACCEPTABLE,$$$ERROR($$$RESTBadAccepts)) Quit
         If '$isobject(%request.Content) || (%request.Content.Size=0) Do ##class(dc.facilis.rest.Impl).%ReportRESTError(..#HTTP400BADREQUEST,$$$ERROR($$$RESTRequired,"input")) Quit
 
+        Do ##class(dc.facilis.Log).Info("dc.facilis.Dispatch:Generate","On Generate Serviec")
         Set pinput=##class(%DynamicAbstractObject).%FromJSON(%request.Content)
-        $$$ThrowOnError(##class(dc.facilis.core).Execute(pinput, .response))
+        Do ##class(dc.facilis.Log).Info("dc.facilis.Dispatch:Generate",pinput.%ToJSON())
+        $$$ThrowOnError(##class(dc.facilis.Core).Execute(pinput, .response))
 
         Do ##class(dc.facilis.rest.Impl).%WriteResponse(response)
     } Catch (ex) {
         Do ##class(dc.facilis.rest.Impl).%ReportRESTError(..#HTTP500INTERNALSERVERERROR,ex.AsStatus(),$parameter("dc.facilis.rest.Impl","ExposeServerExceptions"))
+        Do ##class(dc.facilis.Log).Error("dc.facilis.Core:I14yImporter", $System.Status.GetErrorText(ex.AsStatus()))
     }
 }
 
