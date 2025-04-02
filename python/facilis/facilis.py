@@ -2,12 +2,13 @@
 # coding: utf-8
 
 import os
-from crewai import Agent, Task, Crew
-from textwrap import dedent
 import json
 import requests
-from typing import List, Dict, Any, Optional
+import time
 import logging
+from crewai import Agent, Task, Crew
+from textwrap import dedent
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from dotenv import load_dotenv
 import streamlit as st
@@ -349,6 +350,7 @@ class IrisI14yService:
                     # Exponential backoff: 1s, 2s, 4s...
                     wait_time = 2 ** (retry_count - 1)
                     self.logger.info(f"Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
                 continue
 
             except requests.exceptions.RequestException as e:
@@ -696,6 +698,7 @@ class APISpecificationCrew:
 
 def get_facilis_llm():
     """Returns the appropriate chat model based on AI_ENGINE selection."""
+    from crewai import LLM
     logger = logging.getLogger('facilis.get_facilis_llm')
     
     ai_engine = os.getenv("AI_ENGINE")
@@ -708,7 +711,7 @@ def get_facilis_llm():
         from openai import OpenAI
         logger.info(f"Using OpenAI with model: {model_name}")
         os.environ["OPENAI_API_KEY"] = api_key
-        return model_name  # Return just the model name
+        return LLM(model=model_name, temperature=0)  # Return just the model name
 
     if ai_engine in ["azureopenai", "azure_openai"]:
         azure_endpoint = os.getenv("AZURE_ENDPOINT")
@@ -723,14 +726,14 @@ def get_facilis_llm():
 
     if ai_engine in ["anthropic", "claude"]:
         os.environ["ANTHROPIC_API_KEY"] = api_key
-        return model_name
+        return LLM(model=model_name, temperature=0)
 
     if ai_engine == "gemini":
         os.environ["GOOGLE_API_KEY"] = api_key
-        return model_name
+        return LLM(model=model_name, temperature=0)
     
     if ai_engine == "ollama":
-        return model_name
+        return LLM(model=model_name, temperature=0)
     
     logger.error(f"Invalid AI engine selected: {ai_engine}")
     return None
