@@ -11,6 +11,8 @@ ClassMethod Execute(json As %DynamicObject, Output response As %String) As %Stat
         Set production = json.%Get("production_name")
         Set:(production="") production = "facilisProduction"
         Set response = ..GenerateI14y(production, openapi.%ToJSON())
+        Do ..I14yImporter(.impErr)
+        Set:(impErr'="") response.import = impErr
 	} Catch tException {
 		Set:$$$ISOK(tSC) tSC = tException.AsStatus()
 	}
@@ -20,6 +22,7 @@ ClassMethod Execute(json As %DynamicObject, Output response As %String) As %Stat
 /// Generate Interoperability
 ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %String [ Language = python ]
 {
+
     import os
     import json
     import re
@@ -356,7 +359,7 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             role="IRIS Production and Business Service Generator",
             goal="Generate properly formatted IRIS Production and Business Service classes from OpenAPI specifications",
             backstory="""You are an experienced InterSystems IRIS developer specializing in Interoperability Productions.
-            Your expertise is in creating Business Services that can receive and process incoming requests based on
+            Your expertise is in creating Business Services and Productions that can receive and process incoming requests based on
             API specifications.""",
             verbose=False,
             allow_delegation=True,
@@ -704,52 +707,6 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
             }}
 
             }
-        """
-            
-            self.generated_classes[class_name] = class_content
-            return class_content
-        
-        def write_business_service(self, service_name, endpoint_info):
-            """
-            Generate an IRIS Business Service class
-            
-            Args:
-                service_name (str): Name of the business service
-                endpoint_info (dict): Information about the API endpoint
-                
-            Returns:
-                str: The generated class content
-            """
-            class_name = self._sanitize_class_name(f"bs{service_name}")
-            
-            class_content = f"""Class {class_name} Extends Ens.BusinessService
-            {{
-
-            Parameter ADAPTER = "EnsLib.HTTP.InboundAdapter";
-
-            Method OnProcessInput(pInput As %Stream.Object, Output pOutput As %RegisteredObject) As %Status
-            {{
-                Set tSC = $$$OK
-                Try {{
-                    // Process input and create a request message
-                    Set tRequest = ##class(ms{service_name}).%New()
-                    
-                    // Forward to appropriate business process or operation
-                    Set tSC = ..SendRequestSync("to{service_name}", tRequest, .tResponse)
-                    
-                    // Handle response
-                    If $IsObject(tResponse) {{
-                        // Process response
-                    }}
-                }}
-                Catch ex {{
-                    Set tSC = ex.AsStatus()
-                }}
-                
-                Return tSC
-            }}
-
-            }}
             """
             
             self.generated_classes[class_name] = class_content
@@ -985,12 +942,15 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     collector = create_collector_agent()
 
     # Create tasks
+ 
     analysis_task = Task(
-        description="Analyze the OpenAPI specification and plan the necessary IRIS Interoperability components",
+        description="""Analyze the OpenAPI specification and plan the necessary IRIS Interoperability components. 
+        Include a list of all components that should be in the Production class.""",
         agent=analyzer,
-        expected_output="A detailed analysis of OpenAPI spec and plan for IRIS components",
+        expected_output="A detailed analysis of OpenAPI spec and plan for IRIS components, including Production components list",
         input={
-            "openapi_spec": openApiSpec  # Pass the dictionary directly, the tool will handle it
+            "openapi_spec": openApiSpec,
+            "production_name": "${production_name}" 
         }
     )
 
@@ -1028,6 +988,23 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
         }
     )
 
+    production_generation_task = Task(
+        description="Generate the Production class that includes all generated components",
+        agent=bs_generator,  # We can use the bs_generator since it has the generate_production_class_tool
+        expected_output="IRIS Production class definition",
+        context=[bs_generation_task, bo_generation_task],  # This ensures it runs after BS and BO generation
+    )
+
+    production_generation_task = Task(
+        description="Generate the Production class that includes all generated components",
+        agent=bs_generator,  # We can use the bs_generator since it has the generate_production_class_tool
+        input={
+            "production_name": "${production_name}"  # Add production name input
+        },
+        expected_output="IRIS Production class definition",
+        context=[bs_generation_task, bo_generation_task],  # This ensures it runs after BS and BO generation
+    )
+
     collection_task = Task(
         description="Collect all generated IRIS class files into a JSON collection",
         agent=collector,
@@ -1041,14 +1018,22 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
     # Create the crew with the new agent and task
     crew = Crew(
         agents=[analyzer, bs_generator, bo_generator, exporter, collector],
-        tasks=[analysis_task, bs_generation_task, bo_generation_task, export_task, validate_task, collection_task]
+        tasks=[
+            analysis_task, 
+            bs_generation_task, 
+            bo_generation_task, 
+            production_generation_task, 
+            export_task, 
+            validate_task, 
+            collection_task
+        ]
     )
 
     # -=--=--=--=--=--=--=--=--=--=--=--=--=--=--=-
 
     response = {}
     try:
-        result = crew.kickoff(inputs={"openapi_spec": openApiSpec})
+        result = crew.kickoff(inputs={"openapi_spec": openApiSpec, "production_name": "FacilisProduction"})
         response = {
             "status": "success",
             "result": result
@@ -1068,6 +1053,17 @@ ClassMethod GenerateI14y(productionName As %String, openApiSpec As %String) As %
         }
 
     return json.dumps(response)
+}
+
+ClassMethod I14yImporter(Output erros) As %Status
+{
+    Set tSC = $$$OK
+	Try {
+        Do $System.OBJ.ImportDir("/home/irisowner/dev/output/iris_classes","*.xml;*.cls","ck",.errors,1)
+	} Catch tException {
+		Set:$$$ISOK(tSC) tSC = tException.AsStatus()
+	}
+	Return tSC
 }
 
 }
