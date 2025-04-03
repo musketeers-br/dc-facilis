@@ -33,6 +33,20 @@ services:
     networks:
       - default
 
+  jupyter:
+    image: quay.io/jupyter/base-notebook
+    ports:
+      - 39999:8888
+    volumes:
+      - ./jupyter:/home/jovyan/work
+    environment:
+      - AI_ENGINE=$AI_ENGINE
+      - API_KEY=$API_KEY
+      - LLM_MODEL_NAME=$LLM_MODEL_NAME
+    command: ["start-notebook.py", "--NotebookApp.token='123'"]
+    networks:
+      - default
+
 networks:
   default:
     driver: bridge
