@@ -94,7 +94,18 @@ This will be automatically converted into proper API specifications for:
 - Enter your production name
 - Specify the namespace
 
-Facilis will handle the rest!
+Facilis will then create an OpenAPI documentation from your natural language prompt. If any information is missing, the agents will interact with you to gather the necessary details.
+
+Once the OpenAPI documentation is finalized, it will be sent to InterSystems IRIS via a REST service. Subsequently, other agents will convert this OpenAPI documentation into a functional Interoperability configuration.
+
+**Important Considerations**:
+
+- This part of the process may encounter timeout errors due to the lengthy time required to generate the interoperability components.
+- The agents may occasionally "hallucinate," generating Business Operations and Business Services that deviate from the specified requirements.
+- The generated files are stored in the /output/ folder, which is intended for import into InterSystems IRIS. However, import and compilation errors may occur.
+- This process relies on LLMs, which are not yet fully accurate. Manual review and adjustments are often necessary.
+
+**Disclaimer**: This project, Facilis, is a proof of concept and an experiment in AI automation. It is intended for demonstration and exploration purposes. Use with caution and be aware of potential limitations and inaccuracies.
 
 ## 🚧 Limitations
 - Accuracy of extracted API details depends on the quality of user input.
