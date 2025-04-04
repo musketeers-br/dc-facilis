@@ -10,13 +10,19 @@ import aiohttp
 import asyncio
 
 from crewai import Agent, Task, Crew
+from crewai.tools import BaseTool
 from textwrap import dedent
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type, Union
+from pydantic import BaseModel, Field
 from datetime import datetime
 from dotenv import load_dotenv
 import streamlit as st
 
+OUTPUT_DIR = "/home/irisowner/dev/output"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 load_dotenv()
+
 os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +41,56 @@ class StreamlitCallback:
         self.logger = logging.getLogger('facilis.StreamlitCallback')
         self.user_inputs = {}
 
+        # Define message templates
+        self.agent_messages = {
+            "production": "Production Agent",
+            "extraction": "Extraction Agent",
+            "validation": "Validation Agent",
+            "interaction": "Interaction Agent",
+            "transformation": "Transformation Agent",
+            "reviewer": "Reviewer Agent",
+            "analyzer": "Analyzer Agent",
+            "bs_generator": "Business Service Generator",
+            "bo_generator": "Business Operation Generator",
+            "exporter": "Exporter Agent",
+            "collector": "Collector Agent"
+        }
+
+        self.completion_messages = {
+            "reviewer": "✅ API specification review completed",
+            "analyzer": "✅ OpenAPI structure analysis completed",
+            "bs_generator": "✅ Business Service components generated",
+            "bo_generator": "✅ Business Operation components generated",
+            "exporter": "✅ Classes exported successfully",
+            "collector": "✅ Generated files collected"
+        }
+
+    def format_agent_message(self, agent_role: str, task_description: str) -> str:
+        """Format the agent start message"""
+        default_message = "Agent {} starting task".format(agent_role)
+        agent_msg = self.agent_messages.get(agent_role, default_message)
+        return "👤 {}: {}...".format(agent_msg, task_description[:100])
+
+    def format_completion_message(self, agent_role: str, task_description: str) -> str:
+        """Format the agent completion message"""
+        default_message = "Agent {} completed task".format(agent_role)
+        completion_msg = self.completion_messages.get(agent_role, default_message)
+        return "{}: {}".format(completion_msg, task_description[:100])
+
+    def on_agent_start(self, agent: Agent, task: Any):
+        self.current_agent = agent
+        task_description = task.description if hasattr(task, 'description') else str(task)
+        message = self.format_agent_message(agent.role, task_description)
+        self.logger.info(message)
+        self.container.info(message)
+
+    def on_agent_end(self, agent: Agent, task: Any):
+        self.current_agent = None
+        task_description = task.description if hasattr(task, 'description') else str(task)
+        message = self.format_completion_message(agent.role, task_description)
+        self.logger.info(message)
+        self.container.success(message)
+
     def on_crew_start(self):
         self.logger.info("Starting CrewAI workflow")
         self.container.info("🚀 Starting API integration process...")
@@ -43,81 +99,15 @@ class StreamlitCallback:
         self.logger.info("CrewAI workflow completed")
         self.container.success("✅ API integration process completed!")
 
-    def on_agent_start(self, agent: Agent, task: Any):
-        self.current_agent = agent
-        # Handle both string and Task objects
-        task_description = task.description if hasattr(task, 'description') else str(task)
-        message = f"👤 Agent '{agent.role}' starting task: {task_description[:100]}..."
-        self.logger.info(message)
-        self.container.info(message)
-
-    def on_agent_end(self, agent: Agent, task: Any):
-        self.current_agent = None
-        # Handle both string and Task objects
-        task_description = task.description if hasattr(task, 'description') else str(task)
-        message = f"✨ Agent '{agent.role}' completed task: {task_description[:100]}"
-        self.logger.info(message)
-        self.container.success(message)
-
-    def on_timeout_error(self, retry_count: int, max_retries: int):
-        """New method to notify user about timeout and retries"""
-        if retry_count < max_retries:
-            message = f"""⏳ Request timeout occurred (attempt {retry_count}/{max_retries})
-            The server is taking longer than expected to respond.
-            Automatically retrying in a moment..."""
-            self.logger.warning(message)
-            self.container.warning(message)
-        else:
-            message = """🔄 The server is currently experiencing high latency.
-            """
-
-    async def on_iris_generation_start_async(self):
-        """Async version of on_iris_generation_start"""
-        message = """🔄 Generating InterSystems IRIS interoperability components:
-        - Creating Business Service
-        - Setting up Business Process
-        - Configuring Business Operation
-        - Establishing Message Routes"""
-        self.logger.info("Starting IRIS interoperability generation")
-        self.container.info(message)
-
-    async def on_iris_generation_complete_async(self, status: bool, details: str = None):
-        """Async version of on_iris_generation_complete"""
-        if status:
-            message = "✅ Successfully generated InterSystems IRIS interoperability components!"
-            self.container.success(message)
-        else:
-            message = f"❌ Failed to generate InterSystems IRIS components: {details or 'Unknown error'}"
-            self.container.error(message)
-        self.logger.info(message)
-
-    async def on_timeout_error_async(self, retry_count: int, max_retries: int):
-        """Async version of on_timeout_error"""
-        if retry_count < max_retries:
-            message = f"""⏳ Request timeout occurred (attempt {retry_count}/{max_retries})
-            The server is taking longer than expected to respond.
-            Automatically retrying in a moment..."""
-            self.logger.warning(message)
-            self.container.warning(message)
-        else:
-            message = """🔄 The server is currently experiencing high latency.
-            Please try again in a few moments."""
-            self.logger.error(message)
-
     def on_agent_error(self, agent: Any, task: Any, error: Exception):
         agent_role = agent.role if hasattr(agent, 'role') else str(agent)
         task_description = task.description if hasattr(task, 'description') else str(task)
         
-        # Check if it's a timeout error
-        if isinstance(error, IrisIntegrationError) and "timeout" in str(error).lower():
-            self.on_timeout_error(3, 3)  # Assuming max retries is 3
-            return
-            
-        # Handle other IRIS-related tasks
-        if 'iris' in str(task_description).lower():
-            self.on_iris_generation_complete(False, str(error))
-        
-        message = f"❌ Error in agent '{agent_role}' during task: {task_description[:100]}\nError: {str(error)}"
+        message = "❌ Error in agent '{}' during task: {}\nError: {}".format(
+            agent_role,
+            task_description[:100],
+            str(error)
+        )
         self.logger.error(message)
         self.container.error(message)
 
@@ -409,11 +399,752 @@ class IrisI14yService:
         return asyncio.run(self.get_namespaces_async())
 
 
+class IRISClassWriter:
+    """Tool for generating InterSystems IRIS interoperability class files"""
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, output_dir=OUTPUT_DIR):
+        if not IRISClassWriter._initialized:
+            self.output_dir = os.path.abspath(output_dir)
+            self.generated_classes = {}
+            self._ensure_output_directory()
+            IRISClassWriter._initialized = True
+
+    def validate_classes(self, class_names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Validate the generated IRIS classes
+        
+        Args:
+            class_names (Optional[List[str]]): Optional list of specific class names to validate
+            
+        Returns:
+            dict: Validation results for each class
+        """
+        validation_results = {}
+        
+        classes_to_validate = (
+            class_names if class_names 
+            else list(self.generated_classes.keys())
+        )
+        
+        for class_name in classes_to_validate:
+            if class_name not in self.generated_classes:
+                validation_results[class_name] = {
+                    "valid": False,
+                    "issues": ["Class not found in generated classes"]
+                }
+                continue
+                
+            class_content = self.generated_classes[class_name]
+            issues = []
+            
+            # Basic validation checks
+            if not "Class " in class_content:
+                issues.append("Missing Class declaration")
+            
+            if not "Extends " in class_content:
+                issues.append("Missing Extends keyword")
+            
+            # Add more validation checks as needed
+            
+            validation_results[class_name] = {
+                "valid": len(issues) == 0,
+                "issues": issues
+            }
+        
+        return validation_results
+
+    def _ensure_output_directory(self):
+        """Ensures the output directory exists and is writable"""
+        try:
+            os.makedirs(self.output_dir, exist_ok=True)
+            # Test if directory is writable
+            test_file = os.path.join(self.output_dir, '.write_test')
+            try:
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+            except (IOError, OSError) as e:
+                raise PermissionError(f"Output directory {self.output_dir} is not writable: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to create output directory {self.output_dir}: {str(e)}")
+    
+    def write_production_class(self, production_name, components):
+        """
+        Generate an IRIS Production class
+        
+        Args:
+            production_name (str): Name of the production
+            components (list): List of components to include in the production
+            
+        Returns:
+            str: The generated class content
+        """
+        class_name = self._sanitize_class_name(production_name)
+        
+        class_content = f"""Class {class_name} Extends Ens.Production
+        {{
+
+        XData ProductionDefinition
+        {{
+        <Production Name="{class_name}" LogGeneralTraceEvents="false">
+        """
+            
+        # Add components
+        for component in components:
+            comp_type = component.get("type", "")
+            comp_name = component.get("name", "")
+            comp_class = component.get("class", "")
+            
+            if comp_type and comp_name and comp_class:
+                class_content += f"""  <{comp_type} Name="{comp_name}" Class="{comp_class}">
+        </{comp_type}>
+        """
+                
+                class_content += """</Production>
+        }}
+
+        }
+        """
+        
+        self.generated_classes[class_name] = class_content
+        return class_content
+    
+    def write_business_operation(self, operation_name, endpoint_info):
+        """
+        Generate an IRIS Business Operation class
+        
+        Args:
+            operation_name (str): Name of the business operation
+            endpoint_info (dict): Information about the API endpoint
+            
+        Returns:
+            str: The generated class content
+        """
+        class_name = self._sanitize_class_name(f"bo{operation_name}")
+        
+        method = endpoint_info.get("method", "GET")
+        path = endpoint_info.get("path", "/")
+        
+        class_content = f"""Class {class_name} Extends Ens.BusinessOperation
+        {{
+
+        Parameter ADAPTER = "EnsLib.HTTP.OutboundAdapter";
+
+        Property Adapter As EnsLib.HTTP.OutboundAdapter;
+
+        Parameter INVOCATION = "Queue";
+
+        Method {operation_name}(pRequest As ms{operation_name}, Output pResponse As Ens.Response) As %Status
+        {{
+            Set tSC = $$$OK
+            Try {{
+                // Prepare HTTP request
+                Set tHttpRequest = ##class(%Net.HttpRequest).%New()
+                Set tHttpRequest.ContentType = "application/json"
+                
+                // Set request path and method
+                Set tPath = "{path}"
+                Set tMethod = "{method}"
+                
+                // Convert request message to JSON
+                // [Additional logic for request preparation]
+                
+                // Send the HTTP request
+                Set tSC = ..Adapter.SendFormDataArray(.tHttpResponse, tMethod, tPath, tHttpRequest)
+                
+                // Process response
+                If $$$ISOK(tSC) {{
+                    // Create response object
+                    Set pResponse = ##class(Ens.Response).%New()
+                    // Process HTTP response
+                }}
+            }}
+            Catch ex {{
+                Set tSC = ex.AsStatus()
+            }}
+            
+            Return tSC
+        }}
+
+        XData MessageMap
+        {{
+        <MapItems>
+        <MapItem MessageType="ms{operation_name}">
+            <Method>{operation_name}</Method>
+        </MapItem>
+        </MapItems>
+        }}
+
+        }}
+        """
+        
+        self.generated_classes[class_name] = class_content
+        return class_content
+    
+    def write_message_class(self, message_name, schema_info):
+        """
+        Generate an IRIS Message class
+        
+        Args:
+            message_name (str): Name of the message class
+            schema_info (dict): Information about the schema
+            
+        Returns:
+            str: The generated class content
+        """
+        class_name = self._sanitize_class_name(f"ms{message_name}")
+        
+        class_content = f"""Class {class_name} Extends Ens.Request
+        {{
+
+        """
+        
+        # Add properties based on schema
+        if isinstance(schema_info, dict) and "properties" in schema_info:
+            for prop_name, prop_info in schema_info["properties"].items():
+                prop_type = self._map_schema_type_to_iris(prop_info.get("type", "string"))
+                class_content += f"Property {prop_name} As {prop_type};\n\n"
+        
+        class_content += "}\n"
+        
+        self.generated_classes[class_name] = class_content
+        return class_content
+    
+    def export_classes(self):
+        """
+        Export all generated classes to .cls files
+        
+        Returns:
+            dict: Status of export operation
+        """
+        results = {}
+        
+        if not self.generated_classes:
+            return {"status": "warning", "message": "No classes to export"}
+        
+        for class_name, class_content in self.generated_classes.items():
+            file_path = os.path.join(self.output_dir, f"{class_name}.cls")
+            
+            try:
+                # Ensure the directory exists (including package directories)
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                
+                # Write the file with proper encoding
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(class_content)
+                
+                results[class_name] = {
+                    "status": "success",
+                    "path": file_path,
+                    "size": os.path.getsize(file_path)
+                }
+            except Exception as e:
+                results[class_name] = {
+                    "status": "error",
+                    "error": str(e),
+                    "path": file_path
+                }
+        
+        return results
+    
+    def validate_classes(self):
+        """
+        Validate the generated IRIS classes for syntax and structural correctness
+        
+        Returns:
+            dict: Validation results
+        """
+        validation_results = {}
+        
+        for class_name, class_content in self.generated_classes.items():
+            issues = []
+            
+            # Basic validation checks
+            if not "Class " in class_content:
+                issues.append("Missing Class declaration")
+            
+            if not "Extends " in class_content:
+                issues.append("Missing Extends keyword")
+            
+            # Add more validation as needed
+            
+            validation_results[class_name] = {
+                "valid": len(issues) == 0,
+                "issues": issues
+            }
+        
+        return validation_results
+
+    def _sanitize_class_name(self, name):
+        """Sanitize a name to be valid as an IRIS class name"""
+        if not name:
+            raise ValueError("Class name cannot be empty")
+        if len(name) > 255:  # Example max length
+            raise ValueError("Class name too long")
+
+        # Replace non-alphanumeric characters with underscores
+        name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+        
+        # Ensure first character is a letter
+        if not name[0].isalpha():
+            name = "X" + name
+        
+        return name
+    
+    def _map_schema_type_to_iris(self, schema_type):
+        """Map OpenAPI schema type to IRIS type"""
+        type_mapping = {
+            "string": "%String",
+            "integer": "%Integer",
+            "number": "%Float",
+            "boolean": "%Boolean",
+            "array": "%Library.ListOfDataTypes",
+            "object": "%DynamicObject"
+        }
+        
+        return type_mapping.get(schema_type, "%String")
+
+def sanitize_filename(name):
+    """
+    Sanitize a string to be used as a filename
+    
+    Args:
+        name (str): The input string
+        
+    Returns:
+        str: A sanitized filename
+    """
+    # Remove invalid characters for filenames
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        name = name.replace(char, '_')
+    
+    # Ensure it doesn't start with a space or period
+    if name.startswith(' ') or name.startswith('.'):
+        name = 'x' + name
+    
+    return name
+
+class OpenAPIParser:
+    """Tool for parsing and analyzing OpenAPI v3 specifications"""
+
+    def analyze(self, openapi_spec):
+        """
+        Analyzes an OpenAPI specification and returns structured information
+        
+        Args:
+            openapi_spec (Union[dict, str]): The OpenAPI specification as a Python dictionary or JSON string
+            
+        Returns:
+            dict: Structured analysis of the OpenAPI specification
+        """
+        if isinstance(openapi_spec, str):
+            try:
+                openapi_spec = json.loads(openapi_spec)
+            except json.JSONDecodeError as e:
+                return {"error": f"Invalid JSON string provided: {str(e)}"}
+        elif not isinstance(openapi_spec, dict):
+            return {"error": "Input must be either a JSON string or a dictionary"}
+
+        try:
+            result = {
+                "info": self._extract_info(openapi_spec),
+                "endpoints": self._extract_endpoints(openapi_spec),
+                "schemas": self._extract_schemas(openapi_spec)
+            }
+            return result
+        except Exception as e:
+            return {"error": f"Analysis failed: {str(e)}"}
+    
+    def _extract_info(self, spec):
+        """Extract basic information from the API spec"""
+        info = spec.get("info", {})
+        return {
+            "title": info.get("title", "Unknown API"),
+            "version": info.get("version", "1.0.0"),
+            "description": info.get("description", "")
+        }
+    
+    def _extract_endpoints(self, spec):
+        """Extract endpoint details from the paths section"""
+        paths = spec.get("paths", {})
+        endpoints = []
+        
+        for path, path_item in paths.items():
+            for method, operation in path_item.items():
+                if method in ["get", "post", "put", "delete", "patch"]:
+                    endpoint = {
+                        "path": path,
+                        "method": method.upper(),
+                        "operationId": operation.get("operationId", f"{method}_{path.replace('/', '_')}"),
+                        "summary": operation.get("summary", ""),
+                        "description": operation.get("description", ""),
+                        "parameters": operation.get("parameters", []),
+                        "requestBody": operation.get("requestBody", None),
+                        "responses": operation.get("responses", {})
+                    }
+                    endpoints.append(endpoint)
+        
+        return endpoints
+    
+    def _extract_schemas(self, spec):
+        """Extract schema definitions"""
+        components = spec.get("components", {})
+        schemas = components.get("schemas", {})
+        
+        return {name: details for name, details in schemas.items()}
+
+class GetProductionDetailsTool(BaseTool):
+    name: str = "get_production_details"
+    description: str = "Get the production details and configuration"
+    
+    def _run(self, production_name: Optional[str] = None) -> str:
+        try:
+            # Log the start of getting production details
+            logger.info("Getting production details")
+            
+            # Get production details from ProductionData
+            production_info = {
+                "name": production_name or "DefaultProduction",
+                "timestamp": datetime.now().isoformat(),
+                "status": "initializing"
+            }
+            
+            return json.dumps({
+                "status": "success",
+                "production_info": production_info,
+                "message": "Production details retrieved successfully"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting production details: {str(e)}")
+            return json.dumps({
+                "status": "error",
+                "message": f"Failed to get production details: {str(e)}"
+            })
+
+class AnalyzeOpenAPIToolInput(BaseModel):
+    openapi_spec: Union[str, Dict[str, Any]] = Field(
+        description="OpenAPI specification as JSON string or dictionary"
+    )
+
+class ExtractAPISpecTool(BaseTool):
+    name: str = "extract_api_spec"
+    description: str = "Extract API specifications from input"
+    
+    def _run(self, user_input: str) -> str:
+        # Implementation
+        pass
+
+class ValidateAPISpecTool(BaseTool):
+    name: str = "validate_api_spec"
+    description: str = "Validate API specifications"
+    
+    def _run(self, api_spec: Dict) -> str:
+        # Implementation
+        pass
+
+class InteractionTool(BaseTool):
+    name: str = "interaction"
+    description: str = "Handle user interactions"
+    
+    def _run(self, missing_info: List[str]) -> str:
+        # Implementation
+        pass
+
+class TransformToOpenAPITool(BaseTool):
+    name: str = "transform_to_openapi"
+    description: str = "Transform API specs to OpenAPI format"
+    
+    def _run(self, validated_spec: Dict) -> str:
+        # Implementation
+        pass
+
+class ReviewOpenAPITool(BaseTool):
+    name: str = "review_openapi"
+    description: str = "Review OpenAPI documentation"
+    
+    def _run(self, openapi_spec: Dict) -> str:
+        # Implementation
+        pass
+
+class AnalyzeOpenAPITool(BaseTool):
+    name: str = "analyze_openapi"
+    description: str = "Analyzes an OpenAPI specification and returns structured information"
+    input_schema: Type[BaseModel] = AnalyzeOpenAPIToolInput
+
+    def _run(self, openapi_spec: Union[str, Dict[str, Any]]) -> str:
+        """
+        Analyzes an OpenAPI specification and returns structured information
+        
+        Args:
+            openapi_spec: The OpenAPI specification as a JSON string or dictionary
+            
+        Returns:
+            str: JSON string containing structured analysis
+        """
+        parser = OpenAPIParser()
+        
+        try:
+            # If input is string, try to parse it as JSON
+            if isinstance(openapi_spec, str):
+                try:
+                    spec_dict = json.loads(openapi_spec)
+                except json.JSONDecodeError:
+                    return json.dumps({"error": "Invalid JSON string provided"})
+            else:
+                # If it's already a dictionary, use it directly
+                spec_dict = openapi_spec
+            
+            result = parser.analyze(spec_dict)
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"error": f"Analysis failed: {str(e)}"})
+
+class GenerateProductionClassTool(BaseTool):
+    name: str = "generate_production_class"
+    description: str = "Generate an IRIS Production class"
+
+    def _run(self, production_name: str, components: str) -> str:
+        writer = IRISClassWriter()
+        try:
+            components_list = json.loads(components)
+            return writer.write_production_class(production_name, components_list)
+        except json.JSONDecodeError:
+            return "Error: Invalid JSON format for components"
+
+class CollectGeneratedFilesToolInput(BaseModel):
+    directory: str = Field(
+        description="Directory containing the generated .cls files"
+    )
+
+class CollectGeneratedFilesTool(BaseTool):
+    name: str = "collect_generated_files"
+    description: str = "Collect all generated IRIS class files into a JSON collection"
+    
+    def _run(self, directory: str) -> str:
+        try:
+            collected_files = {}
+            
+            # Walk through the directory and collect all .cls files
+            for root, _, files in os.walk(directory):
+                for file in files:
+                    if file.endswith('.cls'):
+                        file_path = os.path.join(root, file)
+                        with open(file_path, 'r') as f:
+                            collected_files[file] = f.read()
+            
+            return json.dumps({
+                "status": "success",
+                "message": f"Collected {len(collected_files)} class files",
+                "files": collected_files
+            })
+            
+        except Exception as e:
+            return json.dumps({
+                "status": "error",
+                "message": f"Error collecting files: {str(e)}",
+                "files": {}
+            })
+
+class GenerateProductionClassToolInput(BaseModel):
+    production_name: str = Field(description="Name of the production")
+    components: Union[str, List[Dict[str, Any]]] = Field(description="Components as JSON string or list of dictionaries")
+
+class GenerateBusinessServiceToolInput(BaseModel):
+    service_name: str = Field(description="Name of the business service")
+    endpoint_info: Union[str, Dict[str, Any]] = Field(description="Endpoint information as JSON string or dictionary")
+
+class GenerateBusinessOperationToolInput(BaseModel):
+    operation_name: str = Field(description="Name of the business operation")
+    endpoint_info: Union[str, Dict[str, Any]] = Field(description="Endpoint information as JSON string or dictionary")
+
+class GenerateMessageClassToolInput(BaseModel):
+    message_name: str = Field(description="Name of the message class")
+    schema_info: Union[str, Dict[str, Any]] = Field(description="Schema information as JSON string or dictionary")
+
+class GenerateBusinessServiceTool(BaseTool):
+    name: str = "generate_business_service"
+    description: str = "Generate an IRIS Business Service class"
+    input_schema: Type[BaseModel] = GenerateBusinessServiceToolInput
+
+    def _run(self, service_name: str, endpoint_info: Union[str, Dict[str, Any]]) -> str:
+        writer = IRISClassWriter()
+        try:
+            if isinstance(endpoint_info, str):
+                try:
+                    endpoint_dict = json.loads(endpoint_info)
+                except json.JSONDecodeError:
+                    return "Error: Invalid JSON format for endpoint info"
+            else:
+                endpoint_dict = endpoint_info
+
+            class_content = writer.write_business_service(service_name, endpoint_dict)
+            # Store the generated class
+            writer.generated_classes[f"BS.{service_name}"] = class_content
+            return class_content
+        except Exception as e:
+            return f"Error generating business service: {str(e)}"
+
+class GenerateBusinessOperationTool(BaseTool):
+    name: str = "generate_business_operation"
+    description: str = "Generate an IRIS Business Operation class"
+    input_schema: Type[BaseModel] = GenerateBusinessOperationToolInput
+
+    def _run(self, operation_name: str, endpoint_info: Union[str, Dict[str, Any]]) -> str:
+        writer = IRISClassWriter()
+        try:
+            if isinstance(endpoint_info, str):
+                try:
+                    endpoint_dict = json.loads(endpoint_info)
+                except json.JSONDecodeError:
+                    return "Error: Invalid JSON format for endpoint info"
+            else:
+                endpoint_dict = endpoint_info
+
+            class_content = writer.write_business_operation(operation_name, endpoint_dict)
+            # Store the generated class
+            writer.generated_classes[f"BO.{operation_name}"] = class_content
+            return class_content
+        except Exception as e:
+            return f"Error generating business operation: {str(e)}"
+
+class GenerateMessageClassTool(BaseTool):
+    name: str = "generate_message_class"
+    description: str = "Generate an IRIS Message class"
+    input_schema: Type[BaseModel] = GenerateMessageClassToolInput
+
+    def _run(self, message_name: str, schema_info: Union[str, Dict[str, Any]]) -> str:
+        writer = IRISClassWriter()
+        try:
+            if isinstance(schema_info, str):
+                try:
+                    schema_dict = json.loads(schema_info)
+                except json.JSONDecodeError:
+                    return "Error: Invalid JSON format for schema info"
+            else:
+                schema_dict = schema_info
+
+            class_content = writer.write_message_class(message_name, schema_dict)
+            # Store the generated class
+            writer.generated_classes[f"MSG.{message_name}"] = class_content
+            return class_content
+        except Exception as e:
+            return f"Error generating message class: {str(e)}"
+
+class GenerateProductionClassTool(BaseTool):
+    name: str = "generate_production_class"
+    description: str = "Generate an IRIS Production class"
+    input_schema: Type[BaseModel] = GenerateProductionClassToolInput
+
+    def _run(self, production_name: str, components: Union[str, List[Dict[str, Any]]]) -> str:
+        writer = IRISClassWriter()
+        try:
+            if isinstance(components, str):
+                try:
+                    components_list = json.loads(components)
+                except json.JSONDecodeError:
+                    return "Error: Invalid JSON format for components"
+            else:
+                components_list = components
+
+            class_content = writer.write_production_class(production_name, components_list)
+            # Store the generated class
+            writer.generated_classes[f"Production.{production_name}"] = class_content
+            return class_content
+        except Exception as e:
+            return f"Error generating production class: {str(e)}"
+
+class ExportIRISClassesToolInput(BaseModel):
+    output_dir: Optional[str] = Field(
+        default=None,
+        description="Optional output directory path. If not provided, will use default directory"
+    )
+
+class ExportIRISClassesTool(BaseTool):
+    name: str = "export_iris_classes"
+    description: str = "Export all generated classes to .cls files"
+    input_schema: Type[BaseModel] = ExportIRISClassesToolInput
+
+    def _run(self, output_dir: Optional[str] = None) -> str:
+        writer = IRISClassWriter()
+        try:
+            if not writer.generated_classes:
+                return json.dumps({
+                    "status": "warning",
+                    "message": "No classes to export",
+                    "details": "The generated_classes dictionary is empty. Make sure classes were generated successfully before exporting."
+                })
+
+            if output_dir:
+                writer.output_dir = os.path.abspath(output_dir)
+                writer._ensure_output_directory()
+
+            results = writer.export_classes()
+            return json.dumps({
+                "status": "success",
+                "message": f"Exported {len(writer.generated_classes)} classes",
+                "details": results
+            }, indent=2)
+        except Exception as e:
+            return json.dumps({
+                "status": "error",
+                "error": str(e)
+            })
+
+class ValidateIRISClassesToolInput(BaseModel):
+    class_names: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of specific class names to validate. If not provided, validates all classes"
+    )
+
+class ValidateIRISClassesTool(BaseTool):
+    name: str = "validate_iris_classes"
+    description: str = "Validate the generated IRIS classes"
+    input_schema: Type[BaseModel] = ValidateIRISClassesToolInput
+
+    def _run(self, class_names: Optional[List[str]] = None) -> str:
+        """
+        Validate the generated IRIS classes
+        
+        Args:
+            class_names (Optional[List[str]]): Optional list of specific class names to validate
+            
+        Returns:
+            str: JSON string containing validation results
+        """
+        writer = IRISClassWriter()
+        try:
+            results = writer.validate_classes(class_names)
+            return json.dumps(results, indent=2)
+        except Exception as e:
+            return json.dumps({
+                "status": "error",
+                "error": str(e)
+            })
+
+# Create tool instances
+analyze_openapi_tool = AnalyzeOpenAPITool()
+generate_production_class_tool = GenerateProductionClassTool()
+generate_business_service_tool = GenerateBusinessServiceTool()
+generate_business_operation_tool = GenerateBusinessOperationTool()
+generate_message_class_tool = GenerateMessageClassTool()
+export_iris_classes_tool = ExportIRISClassesTool()
+validate_iris_classes_tool = ValidateIRISClassesTool()
+collect_generated_files_tool = CollectGeneratedFilesTool()
+
+
 class APIAgents:
-    def __init__(self, llm, iris_service: IrisI14yService):
+    def __init__(self, llm):
         self.logger = logging.getLogger('facilis.APIAgents')
         self.llm = llm
-        self.iris_service = iris_service
         self.logger.info("APIAgents initialized")
 
     def create_production_agent(self) -> Agent:
@@ -505,11 +1236,75 @@ class APIAgents:
             llm=self.llm
         )
 
+    def create_analyzer_agent(self) -> Agent:
+        return Agent(
+            role="OpenAPI Specification Analyzer",
+            goal="Thoroughly analyze OpenAPI specifications and plan IRIS Interoperability components",
+            backstory="""You are an expert in both OpenAPI specifications and InterSystems IRIS Interoperability. 
+            Your job is to analyze OpenAPI documents and create a detailed plan for how they should be 
+            implemented as IRIS Interoperability components.""",
+            verbose=True,
+            allow_delegation=False,
+            tools=[analyze_openapi_tool],
+            llm=self.llm
+        )
+
+    def create_bs_generator_agent(self) -> Agent:
+        return Agent(
+            role="IRIS Production and Business Service Generator",
+            goal="Generate properly formatted IRIS Production and Business Service classes from OpenAPI specifications",
+            backstory="""You are an experienced InterSystems IRIS developer specializing in Interoperability Productions.
+            Your expertise is in creating Business Services and Productions that can receive and process incoming requests based on
+            API specifications.""",
+            verbose=True,
+            allow_delegation=True,
+            tools=[generate_production_class_tool, generate_business_service_tool],
+            llm=self.llm
+        )
+
+    def create_bo_generator_agent(self) -> Agent:
+        return Agent(
+            role="IRIS Business Operation Generator",
+            goal="Generate properly formatted IRIS Business Operation classes from OpenAPI specifications",
+            backstory="""You are an experienced InterSystems IRIS developer specializing in Interoperability Productions.
+            Your expertise is in creating Business Operations that can send requests to external systems
+            based on API specifications.""",
+            verbose=True,
+            allow_delegation=True,
+            tools=[generate_business_operation_tool, generate_message_class_tool],
+            llm=self.llm
+        )
+
+    def create_exporter_agent(self) -> Agent:
+        return Agent(
+            role="IRIS Class Exporter",
+            goal="Export and validate IRIS class definitions to proper .cls files",
+            backstory="""You are an InterSystems IRIS deployment specialist. Your job is to ensure 
+            that generated IRIS class definitions are properly exported as valid .cls files that 
+            can be directly imported into an IRIS environment.""",
+            verbose=True,
+            allow_delegation=False,
+            tools=[export_iris_classes_tool, validate_iris_classes_tool],
+            llm=self.llm
+        )
+        
+    def create_collector_agent(self) -> Agent:
+        return Agent(
+            role="IRIS Class Collector",
+            goal="Collect all generated IRIS class files into a JSON collection",
+            backstory="""You are a file system specialist responsible for gathering and 
+            organizing generated IRIS class files into a structured collection.""",
+            verbose=True,
+            allow_delegation=False,
+            tools=[CollectGeneratedFilesTool()],
+            llm=self.llm
+        )
+
 class APISpecificationCrew:
-    def __init__(self, llm, production_data: ProductionData, iris_service: IrisI14yService, callback=None):
+    def __init__(self, llm, production_data: ProductionData, callback=None):
         self.callback = callback
         self.current_agent = None 
-        api_agents = APIAgents(llm, iris_service)
+        api_agents = APIAgents(llm)
         self.production_agent = api_agents.create_production_agent()
         self.interaction_agent = api_agents.create_interaction_agent()
         self.validation_agent = api_agents.create_validation_agent()
@@ -518,7 +1313,11 @@ class APISpecificationCrew:
         self.reviewer_agent = api_agents.create_reviewer_agent()
         self.iris_i14y_agent = api_agents.create_iris_i14y_agent()
         self.production_data = production_data
-        self.iris_service = iris_service
+        self.analyzer_agent = api_agents.create_analyzer_agent()
+        self.bs_generator_agent = api_agents.create_bs_generator_agent()
+        self.bo_generator_agent = api_agents.create_bo_generator_agent()
+        self.exporter_agent = api_agents.create_exporter_agent()
+        self.collector_agent = api_agents.create_collector_agent()
 
     def get_production_details(self) -> Task:
         if self.callback:
@@ -583,18 +1382,7 @@ class APISpecificationCrew:
 
                 elif field == "namespace":
                     try:
-                        namespaces = self.iris_service.get_namespaces()
-                        if namespaces:
-                            namespace = self.callback.request_user_input(
-                                "namespace",
-                                field_type="select",
-                                options=namespaces,
-                                required=True
-                            )
-                            if namespace:
-                                updated_fields[field] = namespace
-                        else:
-                            namespace = self.callback.request_user_input("namespace")
+                        namespace = self.callback.request_user_input("namespace")
 
                     except Exception as e:
                         self.callback.container.error(f"Failed to fetch namespaces: {str(e)}")
@@ -724,6 +1512,86 @@ class APISpecificationCrew:
             agent=self.reviewer_agent
         )
 
+    def analysis_task(self, openapi_spec: Dict) -> Task:
+        return Task(
+            description="""Analyze the OpenAPI specification and plan the necessary IRIS Interoperability components. 
+            Include a list of all components that should be in the Production class.""",
+            agent=self.analyzer_agent,
+            expected_output="A detailed analysis of OpenAPI spec and plan for IRIS components",
+            input={
+                "openapi_spec": openapi_spec,
+                "production_name": self.production_data.current_production_name
+            }
+        )
+
+    def bs_generation_task(self) -> Task:
+        return Task(
+            description="Generate Business Service classes based on the OpenAPI endpoints",
+            agent=self.bs_generator,
+            expected_output="IRIS Business Service class definitions",
+            context=[self.analysis_task]
+        )
+
+    def bo_generation_task(self) -> Task:
+        return Task(
+            description="Generate Business Operation classes based on the OpenAPI endpoints",
+            agent=self.bo_generator,
+            expected_output="IRIS Business Operation class definitions",
+            context=[self.analysis_task]
+        )
+
+    def export_task(self) -> Task:
+        return Task(
+            description="Export all generated IRIS classes as valid .cls files",
+            agent=self.exporter,
+            expected_output="Valid IRIS .cls files saved to output directory",
+            context=[self.bs_generation_task, self.bo_generation_task],
+            input={
+                "output_dir": OUTPUT_DIR
+            }
+        )
+
+    def validate_task(self) -> Task:
+        return Task(
+            description="Validate all generated IRIS classes",
+            agent=self.exporter,
+            expected_output="Validation results for all generated classes",
+            context=[self.export_task],
+            input={
+                "class_names": None  # Optional, will validate all classes if not specified
+            }
+        )
+
+    def production_generation_task(self) -> Task:
+        return Task(
+            description="Generate the Production class that includes all generated components",
+            agent=self.bs_generator,  # We can use the bs_generator since it has the generate_production_class_tool
+            expected_output="IRIS Production class definition",
+            context=[self.bs_generation_task, self.bo_generation_task],  # This ensures it runs after BS and BO generation
+        )
+
+    def production_generation_task(self) -> Task:
+        return Task(
+            description="Generate the Production class that includes all generated components",
+            agent=self.bs_generator,  # We can use the bs_generator since it has the generate_production_class_tool
+            input={
+                "production_name": "${production_name}"  # Add production name input
+            },
+            expected_output="IRIS Production class definition",
+            context=[self.bs_generation_task, self.bo_generation_task],  # This ensures it runs after BS and BO generation
+        )
+
+    def collection_task(self) -> Task:
+        return Task(
+            description="Collect all generated IRIS class files into a JSON collection",
+            agent=self.collector,
+            expected_output="JSON collection of all generated .cls files",
+            context=[self.export_task, self.validate_task],
+            input={
+                "directory": OUTPUT_DIR
+            }
+        )
+
     def send_to_iris(self, openapi_spec: Dict, production_info: Dict, review_result: Dict) -> Task:
         return Task(
             description=dedent(f"""
@@ -841,176 +1709,304 @@ def extract_json_from_markdown(markdown_text: str) -> str:
         # Return a simple JSON object with the original text
         return json.dumps({"error": "Failed to parse response", "raw_response": text})
 
-async def process_api_integration(user_input: str, production_data: ProductionData, iris_service: IrisI14yService, st_container=None) -> Dict:
+class CrewFactory:
+    @staticmethod
+    def create_crew(production_data: ProductionData, callback: Optional[StreamlitCallback] = None) -> 'CrewManager':
+        return CrewManager(production_data, callback)
+
+class CrewManager:
+    def __init__(self, production_data: ProductionData, callback: Optional[StreamlitCallback] = None):
+        self.production_data = production_data
+        self.callback = callback
+        self._init_agents()
+
+    def _init_agents(self):
+        """Initialize all agents with their roles and tools"""
+        # Production Agent
+        self.production_agent = Agent(
+            role="production",
+            goal="Get production details and setup",
+            backstory="I am responsible for getting production details and initial setup",
+            tools=[GetProductionDetailsTool()]
+        )
+
+        # Extraction Agent
+        self.extraction_agent = Agent(
+            role="extraction",
+            goal="Extract API specifications from input",
+            backstory="I extract and structure API specifications from user input",
+            tools=[ExtractAPISpecTool()]
+        )
+
+        # Validation Agent
+        self.validation_agent = Agent(
+            role="validation",
+            goal="Validate API specifications",
+            backstory="I validate the extracted API specifications for completeness and correctness",
+            tools=[ValidateAPISpecTool()]
+        )
+
+        # Interaction Agent
+        self.interaction_agent = Agent(
+            role="interaction",
+            goal="Handle missing information and user interaction",
+            backstory="I handle user interactions and gather missing information",
+            tools=[InteractionTool()]
+        )
+
+        # Transformation Agent
+        self.transformation_agent = Agent(
+            role="transformation",
+            goal="Transform API specs to OpenAPI format",
+            backstory="I transform the validated specifications into OpenAPI format",
+            tools=[TransformToOpenAPITool()]
+        )
+
+        # Reviewer Agent
+        self.reviewer_agent = Agent(
+            role="reviewer",
+            goal="Review OpenAPI documentation",
+            backstory="I review and validate the OpenAPI documentation",
+            tools=[ReviewOpenAPITool()]
+        )
+
+        # Analyzer Agent
+        self.analyzer_agent = Agent(
+            role="analyzer",
+            goal="Analyze OpenAPI structure",
+            backstory="I analyze the OpenAPI structure for IRIS component generation",
+            tools=[AnalyzeOpenAPITool()]
+        )
+
+        # Business Service Generator Agent
+        self.bs_generator_agent = Agent(
+            role="bs_generator",
+            goal="Generate Business Service components",
+            backstory="I generate IRIS Business Service components",
+            tools=[GenerateBusinessServiceTool()]
+        )
+
+        # Business Operation Generator Agent
+        self.bo_generator_agent = Agent(
+            role="bo_generator",
+            goal="Generate Business Operation components",
+            backstory="I generate IRIS Business Operation components",
+            tools=[GenerateBusinessOperationTool()]
+        )
+
+        # Exporter Agent
+        self.exporter_agent = Agent(
+            role="exporter",
+            goal="Export generated classes",
+            backstory="I export the generated IRIS classes",
+            tools=[ExportIRISClassesTool()]
+        )
+
+        # Collector Agent
+        self.collector_agent = Agent(
+            role="collector",
+            goal="Collect generated files",
+            backstory="I collect all generated files and prepare them for delivery",
+            tools=[CollectGeneratedFilesTool()]
+        )
+
+    def get_production_details(self) -> Task:
+        return Task(
+            description="Getting production details",
+            agent=self.production_agent,
+            expected_output="Production details and configuration",
+            context=[]  # Empty list for context
+        )
+
+    def extraction_task(self, user_input: str) -> Task:
+        return Task(
+            description=f"Extract API specifications from: {user_input}",
+            agent=self.extraction_agent,
+            expected_output="Extracted API specifications",
+            context=[{
+                "input": user_input,
+                "type": "user_input"
+            }]
+        )
+
+    def validation_task(self, api_spec: Dict) -> Task:
+        return Task(
+            description="Validate the extracted API specifications",
+            agent=self.validation_agent,
+            expected_output="Validation results",
+            context=[{
+                "spec": api_spec,
+                "type": "api_spec"
+            }]
+        )
+
+    def interaction_task(self, missing_info: List[str]) -> Task:
+        return Task(
+            description="Gather missing information through user interaction",
+            agent=self.interaction_agent,
+            expected_output="Completed information",
+            context=[{
+                "missing": missing_info,
+                "type": "missing_info"
+            }]
+        )
+
+    def transformation_task(self, validated_spec: Dict) -> Task:
+        return Task(
+            description="Transform specifications to OpenAPI format",
+            agent=self.transformation_agent,
+            expected_output="OpenAPI specification",
+            context=[{
+                "spec": validated_spec,
+                "type": "validated_spec"
+            }]
+        )
+
+    def review_task(self, openapi_spec: Dict) -> Task:
+        return Task(
+            description="Review OpenAPI documentation",
+            agent=self.reviewer_agent,
+            expected_output="Review results",
+            context=[{
+                "spec": openapi_spec,
+                "type": "openapi_spec"
+            }]
+        )
+
+    def analysis_task(self, openapi_spec: Dict) -> Task:
+        return Task(
+            description="Analyze OpenAPI structure for IRIS components",
+            agent=self.analyzer_agent,
+            expected_output="Analysis results",
+            context=[{
+                "spec": openapi_spec,
+                "type": "openapi_spec"
+            }]
+        )
+
+    def bs_generation_task(self) -> Task:
+        return Task(
+            description="Generate Business Service components",
+            agent=self.bs_generator_agent,
+            expected_output="Generated Business Service classes",
+            context=[]
+        )
+
+    def bo_generation_task(self) -> Task:
+        return Task(
+            description="Generate Business Operation components",
+            agent=self.bo_generator_agent,
+            expected_output="Generated Business Operation classes",
+            context=[]
+        )
+
+    def export_task(self) -> Task:
+        return Task(
+            description="Export generated IRIS classes",
+            agent=self.exporter_agent,
+            expected_output="Exported class files",
+            context=[]
+        )
+
+    def collection_task(self) -> Task:
+        return Task(
+            description="Collect all generated files",
+            agent=self.collector_agent,
+            expected_output="Collection of generated files",
+            context=[]
+        )
+
+
+
+
+async def process_api_integration(
+    user_input: str, 
+    production_data: ProductionData, 
+    st_container=None
+) -> Dict:
+    """Process the API integration workflow"""
     logger = logging.getLogger('facilis.process_api_integration')
     logger.info("Starting API integration process")
-
-    callback = StreamlitCallback(st_container)
-    callback.on_crew_start()
     
     try:
-        llm = get_facilis_llm()
-        if llm is None:
-            logger.error("Invalid AI_ENGINE selection")
-            raise ValueError("Invalid AI_ENGINE selection")
-
-        logger.info("Creating APISpecificationCrew")
-        crew = APISpecificationCrew(llm, production_data, iris_service, callback)
-
-        # Process endpoints
-        logger.info("Processing endpoints")
-        endpoints = user_input.split('\n')
+        callback = StreamlitCallback(st_container)
+        crew = CrewFactory.create_crew(
+            production_data=production_data,
+            callback=callback
+        )
+        
+        # First task: Get production details
+        initial_crew = Crew(
+            agents=[crew.production_agent],
+            tasks=[crew.get_production_details()],
+            process_callbacks=[callback],
+            verbose=True
+        )
         
         logger.info("Getting production details")
-        api_crew = Crew(
-            agents=[
-                crew.production_agent,
-                crew.extraction_agent,
-                crew.validation_agent,
-                crew.interaction_agent,
-                crew.transformation_agent,
-                crew.reviewer_agent,
-                crew.iris_i14y_agent
-            ],
-            tasks=[crew.get_production_details()],
-            verbose=True
-        )
-
-        production_result = api_crew.kickoff()
-        production_info = json.loads(extract_json_from_markdown(production_result))
-
-        if not isinstance(production_info, dict):
-            raise ValueError("Invalid production info format")
-
-        if not production_info.get('production_name') or not production_info.get('namespace'):
-            logger.info("Waiting for production details...")
-            st.stop()
-
-        # Add production to production data if it doesn't exist
-        if not production_data.production_exists(production_info['production_name']):
-            production_data.add_production(
-                production_info['production_name'],
-                production_info['namespace']
-            ) 
-        production_info = callback.get_production_details()
-
-        logger.info("Extracting API specifications")
-        api_crew = Crew(
-            agents=[crew.extraction_agent],
-            tasks=[crew.extract_api_specs(endpoints)],
-            verbose=True
-        )
-
-        extracted_json = extract_json_from_markdown(api_crew.kickoff())
-        extracted_results = json.loads(extracted_json)
+        production_result = initial_crew.kickoff()
         
-        if not isinstance(extracted_results, list):
-            extracted_results = [extracted_results] if extracted_results else []
-
-        final_endpoints = []
-        for endpoint_spec in extracted_results:
-            if not isinstance(endpoint_spec, dict):
-                logger.warning(f"Skipping invalid endpoint spec: {endpoint_spec}")
-                continue
-                
-            logger.info(f"Processing endpoint: {endpoint_spec.get('endpoint', 'unknown')}")
-            missing_fields = [k for k, v in endpoint_spec.items() if v == 'missing']
-            if missing_fields:
-                logger.info(f"Handling missing fields: {missing_fields}")
-                api_crew = Crew(
-                    agents=[crew.interaction_agent],
-                    tasks=[crew.handle_missing_fields(missing_fields, endpoint_spec)],
-                    verbose=True
-                )
-
-                updated_json = extract_json_from_markdown(api_crew.kickoff())
-                try:
-                    updated_spec = json.loads(updated_json)
-                    if isinstance(updated_spec, dict):
-                        endpoint_spec.update(updated_spec)
-                except (json.JSONDecodeError, AttributeError) as e:
-                    logger.error(f"Failed to update endpoint spec: {e}")
-
-            logger.info("Validating endpoint specification")
-            api_crew = Crew(
-                agents=[crew.validation_agent],
-                tasks=[crew.validate_api_spec(endpoint_spec)],
+        # Extract API specs
+        extraction_crew = Crew(
+            agents=[crew.extraction_agent],
+            tasks=[crew.extraction_task(user_input)],
+            process_callbacks=[callback],
+            verbose=True
+        )
+        
+        extraction_result = extraction_crew.kickoff()
+        extracted_specs = json.loads(extract_json_from_markdown(extraction_result))
+        
+        # Continue with validation and other tasks
+        if extracted_specs:
+            validation_crew = Crew(
+                agents=[
+                    crew.validation_agent,
+                    crew.interaction_agent,
+                    crew.transformation_agent,
+                    crew.reviewer_agent,
+                    crew.analyzer_agent
+                ],
+                tasks=[crew.validation_task(extracted_specs)],
+                process_callbacks=[callback],
                 verbose=True
             )
-
-            validation_json = extract_json_from_markdown(api_crew.kickoff())
-            validation_result = json.loads(validation_json)
             
-            if isinstance(validation_result, dict) and 'error' not in validation_result:
-                logger.info("Endpoint validation successful")
-                final_endpoints.append(endpoint_spec)
-                crew.production_data.add_endpoint(production_info['production_name'], endpoint_spec)
-            else:
-                logger.warning(f"Endpoint validation failed: {validation_result}")
-
-        logger.info("Transforming to OpenAPI specification")
-        api_crew = Crew(
-            agents=[crew.transformation_agent],
-            tasks=[crew.transform_to_openapi(final_endpoints, production_info)],
-            verbose=True
-        )
-        openapi_result = json.loads(extract_json_from_markdown(api_crew.kickoff()))
-
-        logger.info("Reviewing OpenAPI documentation")
-        api_crew = Crew(
-            agents=[crew.reviewer_agent],
-            tasks=[crew.review_openapi_spec(openapi_result)],
-            verbose=True
-        )
-        review_json = extract_json_from_markdown(api_crew.kickoff())
-        review_result = json.loads(review_json)
-        
-        # Add validation and default values
-        if not isinstance(review_result, dict):
-            logger.warning("Invalid review result format, using default structure")
-            review_result = {
-                "is_valid": False,
-                "approved_spec": openapi_result,
-                "issues": ["Invalid review result format"],
-                "recommendations": []
-            }
-        
-        # Ensure required keys exist
-        review_result.setdefault("is_valid", False)
-        review_result.setdefault("approved_spec", openapi_result)
-        review_result.setdefault("issues", [])
-        review_result.setdefault("recommendations", [])
-        if review_result["is_valid"]:
-            logger.info("OpenAPI specification approved, sending to Iris")
-            await callback.on_iris_generation_start_async()
+            result = validation_crew.kickoff()
+            review_result = json.loads(extract_json_from_markdown(result))
             
-            iris_payload = {
-                "production_name": production_info['production_name'],
-                "namespace": production_info['namespace'],
-                "openapi_spec": review_result["approved_spec"]
-            }
+            if review_result.get("is_valid", False):
+                # Generation tasks
+                generation_tasks = [
+                    crew.bs_generation_task(),
+                    crew.bo_generation_task(),
+                    crew.export_task(),
+                    crew.collection_task()
+                ]
+                
+                final_result = None
+                for task in generation_tasks:
+                    task_crew = Crew(
+                        agents=[task.agent],
+                        tasks=[task],
+                        process_callbacks=[callback],
+                        verbose=True
+                    )
+                    final_result = task_crew.kickoff()
+                
+                collection_result = json.loads(extract_json_from_markdown(final_result))
+                
+                return {
+                    "review_details": review_result,
+                    "openapi_documentation": review_result.get("approved_spec"),
+                    "generated_files": collection_result.get("files", {})
+                }
             
-            try:
-                iris_result = await iris_service.send_to_iris_async(iris_payload)
-                await callback.on_iris_generation_complete_async(True)
-                return iris_result
-            except IrisIntegrationError as e:
-                await callback.on_iris_generation_complete_async(False, str(e))
-                raise
-        else:
-            logger.warning("OpenAPI specification not approved for integration")
             return {
-                "success": False,
-                "message": "OpenAPI specification not approved for integration",
-                "timestamp": datetime.now().isoformat(),
-                "issues": review_result.get("issues", [])
+                "review_details": review_result,
+                "error": "API specification validation failed"
             }
-
+            
     except Exception as e:
-        callback.on_agent_error(
-            agent=callback.current_agent if callback.current_agent else "Unknown",
-            task="Current task",
-            error=e
-        )
         logger.error(f"Error in process_api_integration: {str(e)}")
         raise

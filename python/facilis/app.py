@@ -2,11 +2,93 @@ import streamlit as st
 import yaml
 import json
 import asyncio
-from facilis import IrisI14yService, ProductionData, process_api_integration
+from facilis import ProductionData, process_api_integration
 from pathlib import Path
 
 current_dir = Path(__file__).parent
 image_path = current_dir / "logo.png"
+
+def display_cls_files(cls_files_data):
+    """Display the generated CLS files with download buttons"""
+    if not cls_files_data:
+        return
+    
+    st.header("Generated IRIS Classes")
+    
+    # Create tabs for viewing all files
+    tabs = st.tabs(["All Classes", "Individual Classes"])
+    
+    with tabs[0]:
+        # Create a combined view of all classes
+        all_classes_content = "\n\n// ===================================\n\n".join(
+            f"// {filename}\n{content}" 
+            for filename, content in cls_files_data.items()
+        )
+        
+        st.code(all_classes_content, language="objectscript")
+        
+        # Download button for all classes as a zip
+        if all_classes_content:
+            create_download_button(
+                "Download All Classes (ZIP)",
+                create_zip_from_cls_files(cls_files_data),
+                "iris_classes.zip",
+                "application/zip"
+            )
+    
+    with tabs[1]:
+        # Create an expander for each class file
+        for filename, content in cls_files_data.items():
+            with st.expander(f"📄 {filename}"):
+                st.code(content, language="objectscript")
+                create_download_button(
+                    f"Download {filename}",
+                    content,
+                    filename,
+                    "text/plain"
+                )
+
+def create_zip_from_cls_files(cls_files_data):
+    """Create a zip file containing all CLS files"""
+    import io
+    import zipfile
+    
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for filename, content in cls_files_data.items():
+            zip_file.writestr(filename, content)
+    
+    return zip_buffer.getvalue()
+
+def create_download_button(label, data, filename, mime_type):
+    """Create a download button for file data"""
+    import base64
+    
+    if isinstance(data, str):
+        data = data.encode()
+    
+    b64 = base64.b64encode(data).decode()
+    
+    download_button_str = f'''
+        <a href="data:{mime_type};base64,{b64}" download="{filename}">
+            <button style="
+                background-color: #4CAF50;
+                border: none;
+                color: white;
+                padding: 12px 30px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 16px;
+                margin: 4px 2px;
+                cursor: pointer;
+                border-radius: 4px;">
+                💾 {label}
+            </button>
+        </a>
+    '''
+    st.markdown(download_button_str, unsafe_allow_html=True)
 
 st.markdown("""
     <style>
@@ -35,8 +117,6 @@ with col2:
     st.image(str(image_path), width=215)  # Set exact width, height will maintain aspect ratio
 
 async def main():
-    iris_service = IrisI14yService()
-
     if 'production_data' not in st.session_state:
         st.session_state.production_data = ProductionData()
         
@@ -77,16 +157,13 @@ async def main():
                 st.error("Please enter at least one API endpoint.")
             else:
                 st.session_state.processing = True
-
     if st.session_state.processing:
-        #with st.spinner("Processing endpoints and integrating with Iris..."):
         with status_container:
             st.subheader("Processing Endpoints and Integrating with Iris")
             try:
                 result = await process_api_integration(
                     endpoints_input,
                     st.session_state.production_data,
-                    iris_service,
                     st_container=status_container
                 )
                 
@@ -97,21 +174,7 @@ async def main():
                 review_status = review_details.get('is_valid', False)
                 st.markdown(f"Review Status: {'✓ Approved' if review_status else '✗ Not Approved'}")
                 
-                # Safely access iris integration results
-                iris_result = result.get('iris_integration', {})
-                if isinstance(iris_result, dict):
-                    status_color = "green" if iris_result.get('success', False) else "red"
-                    message = iris_result.get('message', 'No message available')
-                    st.markdown(f"Iris Integration: <span style='color:{status_color}'>{message}</span>", 
-                                unsafe_allow_html=True)
-                    
-                    if 'iris_response' in iris_result:
-                        with st.expander("Iris Integration Details"):
-                            st.json(iris_result['iris_response'])
-                else:
-                    st.error("Invalid Iris integration result format")
-                
-                # Only show OpenAPI documentation if we have it
+                # Display OpenAPI documentation
                 openapi_doc = result.get('openapi_documentation')
                 if openapi_doc:
                     st.subheader("OpenAPI Documentation")
@@ -123,7 +186,7 @@ async def main():
                     with tab2:
                         st.json(openapi_doc)
                     
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2 = st.columns(2)
                     
                     with col1:
                         st.download_button(
@@ -140,19 +203,15 @@ async def main():
                             file_name="openapi_spec.json",
                             mime="application/json"
                         )
-                    
-                    with col3:
-                        report_data = {
-                            'review_details': review_details,
-                            'iris_integration': iris_result
-                        }
-                        st.download_button(
-                            label="Download Integration Report",
-                            data=json.dumps(report_data, indent=2),
-                            file_name="integration_report.json",
-                            mime="application/json"
-                        )
-            
+                
+                # Display generated CLS files
+                cls_files = result.get('generated_files', {})
+                if cls_files:
+                    display_cls_files(cls_files)
+                    st.success("✅ IRIS Classes generated successfully!")
+                else:
+                    st.warning("No IRIS classes were generated.")
+
             except Exception as e:
                 st.error(f"Processing Error: {str(e)}")
                 st.error("Please check the logs for more details.")
